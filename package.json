@@ -1,0 +1,24 @@
+{
+  "name": "stelaris-pro",
+  "version": "1.0.0",
+  "description": "**Editor de Video Profesional** — Software de edición de alto nivel con interfaz inmersiva y arquitectura modular.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "cssnano": "^7.1.2",
+    "html-minifier-terser": "^7.2.0",
+    "postcss": "^8.5.8",
+    "postcss-cli": "^11.0.1",
+    "terser": "^5.46.0"
+  }
+}
