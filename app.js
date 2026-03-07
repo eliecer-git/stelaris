@@ -849,7 +849,35 @@ class VaultModule {
         const buffer = await crypto.subtle.digest('SHA-256', data);
         return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
-}
+
+    /* ── DASHBOARD ASSET MANAGEMENT ── */
+    addFile(file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const assets = JSON.parse(localStorage.getItem('stelaris_vault_assets') || '[]');
+            assets.push({
+                id: Date.now(),
+                name: file.name,
+                type: file.type,
+                data: e.target.result,
+                date: Date.now()
+            });
+            localStorage.setItem('stelaris_vault_assets', JSON.stringify(assets));
+            this.bus.emit('vault:asset-added');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    getFiles() {
+        return JSON.parse(localStorage.getItem('stelaris_vault_assets') || '[]');
+    }
+
+    deleteFile(id) {
+        let assets = this.getFiles();
+        assets = assets.filter(a => a.id !== id);
+        localStorage.setItem('stelaris_vault_assets', JSON.stringify(assets));
+        this.bus.emit('vault:asset-removed');
+    }
 }
 
 /* ═══════════════════════════════════════════
@@ -1049,6 +1077,7 @@ class StelarAI {
         this.btnClose = document.getElementById('assistant-close');
 
         this._bind();
+        this._registerMultimodalIntents();
 
         // Log GPU capabilities
         this.brain.vision.isAvailable
@@ -1067,6 +1096,47 @@ class StelarAI {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.processInput(); }
         });
         this.bus.on('stelar:command', (text) => this.processText(text));
+    }
+
+    _registerMultimodalIntents() {
+        // Register additional multimodal intents in the brain
+        const intents = this.brain._intents || {};
+
+        // Generate image/sticker
+        intents['generate_asset'] = {
+            patterns: ['genera', 'crea una imagen', 'generar sticker', 'crear sticker', 'genera un', 'dibuja', 'imagen de', 'sticker de'],
+            handler: async (text) => {
+                const desc = text.replace(/^(genera|crea|dibuja|generar|crear)\s*(una?\s*)?(imagen|sticker|dibujo)?\s*(de|con|que)?\s*/i, '').trim() || 'abstract gradient';
+                return await this._generateAsset(desc);
+            }
+        };
+
+        // Search resources
+        intents['search_resources'] = {
+            patterns: ['busca', 'encuentra', 'descarga', 'buscar', 'search'],
+            handler: async (text) => {
+                const query = text.replace(/^(busca|encuentra|descarga|buscar|search)\s*/i, '').trim();
+                return await this._searchResources(query);
+            }
+        };
+
+        // Place sticker at time
+        intents['place_sticker'] = {
+            patterns: ['colocar sticker', 'pon sticker', 'put sticker', 'agregar sticker en', 'añadir sticker en', 'poner sticker'],
+            handler: async (text) => {
+                return this._executeEditCommand('place_sticker', text);
+            }
+        };
+
+        // Apply effect
+        intents['apply_effect'] = {
+            patterns: ['aplica efecto', 'add effect', 'pon efecto', 'aplicar', 'efecto de', 'efecto'],
+            handler: async (text) => {
+                return this._executeEditCommand('apply_effect', text);
+            }
+        };
+
+        this.brain._intents = intents;
     }
 
     toggle() {
@@ -1091,8 +1161,16 @@ class StelarAI {
         this._typing = true;
         this._showTyping();
 
-        // Delegate to brain
-        const result = await this.brain.process(text);
+        let result;
+
+        // Check multimodal intents first
+        const multiResult = await this._checkMultimodalIntent(text);
+        if (multiResult) {
+            result = multiResult;
+        } else {
+            // Delegate to brain
+            result = await this.brain.process(text);
+        }
 
         // Small delay for natural feel
         await new Promise(r => setTimeout(r, 250 + Math.random() * 300));
@@ -1100,23 +1178,201 @@ class StelarAI {
         this._hideTyping();
         this._typing = false;
 
+        if (result.preview) {
+            this._addPreview(result.preview);
+        }
+
         this._addMsg(result.response, 'bot');
 
-        // Log confidence for debugging
         if (result.confidence > 0) {
             console.log(`[StelarAI] Intent: ${result.intent} (${(result.confidence * 100).toFixed(0)}%)`);
         }
     }
 
+    async _checkMultimodalIntent(text) {
+        const lower = text.toLowerCase();
+        const intents = this.brain._intents || {};
+
+        for (const [name, intent] of Object.entries(intents)) {
+            if (intent.patterns && intent.handler) {
+                for (const pattern of intent.patterns) {
+                    if (lower.includes(pattern)) {
+                        const response = await intent.handler(text);
+                        return { response, intent: name, confidence: 0.9 };
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    async _generateAsset(description) {
+        this.bus.emit('toast:info', '🎨 Generando asset con IA...');
+
+        // Generate a procedural image on canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Create a visually interesting procedural generation
+        const hue1 = Math.random() * 360;
+        const hue2 = (hue1 + 60 + Math.random() * 120) % 360;
+        const gradient = ctx.createRadialGradient(256, 256, 50, 256, 256, 300);
+        gradient.addColorStop(0, `hsl(${hue1}, 80%, 60%)`);
+        gradient.addColorStop(0.5, `hsl(${(hue1 + hue2) / 2}, 70%, 40%)`);
+        gradient.addColorStop(1, `hsl(${hue2}, 60%, 20%)`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Add geometric shapes
+        for (let i = 0; i < 8; i++) {
+            ctx.beginPath();
+            const x = Math.random() * 512;
+            const y = Math.random() * 512;
+            const r = 20 + Math.random() * 80;
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${hue1 + Math.random() * 60}, 70%, 60%, ${0.15 + Math.random() * 0.3})`;
+            ctx.fill();
+        }
+
+        // Add text label
+        ctx.font = 'bold 28px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 8;
+        ctx.fillText(description.slice(0, 30), 256, 480);
+
+        // Convert to blob and save
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        const url = URL.createObjectURL(blob);
+
+        // Add to sticker lab
+        if (window.stelaris?.stickers) {
+            window.stelaris.stickers.stickers.push({ id: Date.now(), url, blob });
+            window.stelaris.stickers._renderGrid();
+        }
+
+        // Save to vault
+        if (window.stelaris?.vault) {
+            const file = new File([blob], `AI_Asset_${Date.now()}.png`, { type: 'image/png' });
+            window.stelaris.vault.addFile(file);
+        }
+
+        this.bus.emit('toast:success', '✨ Asset generado por IA');
+        return {
+            response: `🎨 **Asset generado:** "${description}"\n\nEl recurso ha sido creado y guardado en tu Bóveda. También está disponible en la Galería de Stickers para añadirlo al timeline.`,
+            preview: { type: 'image', url }
+        };
+    }
+
+    async _searchResources(query) {
+        this.bus.emit('toast:info', '🔍 Buscando recursos...');
+        await new Promise(r => setTimeout(r, 800));
+
+        // Simulated search results (in production, this would use APIs)
+        const results = [
+            { title: `${query} - Pack Premium`, icon: '🎬', desc: 'Recurso libre de regalías' },
+            { title: `${query} Overlay`, icon: '✨', desc: 'Efecto de superposición HD' },
+            { title: `${query} Sound FX`, icon: '🔊', desc: 'Efecto de sonido profesional' },
+        ];
+
+        let html = `🔍 **Resultados para "${query}":**\n\n`;
+        results.forEach((r, i) => {
+            html += `${i + 1}. ${r.icon} **${r.title}** — _${r.desc}_\n`;
+        });
+        html += '\n_Selecciona un recurso o pide que lo descargue._';
+
+        return { response: html, preview: { type: 'search', results } };
+    }
+
+    _executeEditCommand(type, text) {
+        const lower = text.toLowerCase();
+
+        if (type === 'place_sticker') {
+            // Parse time from text
+            const timeMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:s|seg|segundo)/);
+            const time = timeMatch ? parseFloat(timeMatch[1]) : 0;
+
+            if (window.stelaris?.stickers?.stickers?.length > 0) {
+                const lastSticker = window.stelaris.stickers.stickers[window.stelaris.stickers.stickers.length - 1];
+                const video = document.getElementById('video-player');
+                if (video) video.currentTime = time;
+                window.stelaris.stickers.addToTimeline(lastSticker);
+                return { response: `✅ **Sticker colocado** en el timeline a los ${time}s.\n\nPuedes ajustar su posición y duración arrastrando los handles en el timeline.` };
+            }
+            return { response: '⚠️ No hay stickers disponibles. Crea uno primero en el **Sticker Studio** o captura un frame.' };
+        }
+
+        if (type === 'apply_effect') {
+            const effects = {
+                'brillo': { prop: 'brightness', value: '1.3' },
+                'brightness': { prop: 'brightness', value: '1.3' },
+                'contraste': { prop: 'contrast', value: '1.4' },
+                'contrast': { prop: 'contrast', value: '1.4' },
+                'saturación': { prop: 'saturation', value: '1.5' },
+                'saturation': { prop: 'saturation', value: '1.5' },
+                'blur': { prop: 'blur', value: '2' },
+                'desenfoque': { prop: 'blur', value: '2' },
+                'sepia': { prop: 'sepia', value: '0.8' },
+            };
+
+            for (const [keyword, effect] of Object.entries(effects)) {
+                if (lower.includes(keyword)) {
+                    this.bus.emit('effect:update', effect);
+                    return { response: `✨ **Efecto "${keyword}"** aplicado al video.\n\nPuedes ajustar la intensidad en el panel de propiedades.` };
+                }
+            }
+            return { response: '🎨 Efectos disponibles: brillo, contraste, saturación, blur, sepia. ¿Cuál quieres aplicar?' };
+        }
+
+        return { response: 'Comando no reconocido. Intenta con más detalle.' };
+    }
+
     _addMsg(text, who) {
         const div = document.createElement('div');
         div.className = `assistant-msg assistant-msg-${who}`;
-        const html = text
+        let content = text;
+        if (typeof text === 'object' && text.response) content = text.response;
+        const html = String(content)
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/_(.*?)_/g, '<em>$1</em>')
             .replace(/`(.*?)`/g, '<code style="font-size:.72rem;background:var(--bg-surface-hover);padding:.1em .3em;border-radius:3px">$1</code>')
             .replace(/\n/g, '<br>');
         div.innerHTML = `<span class="msg-text">${html}</span>`;
+        this.msgBox.appendChild(div);
+        this.msgBox.scrollTop = this.msgBox.scrollHeight;
+    }
+
+    _addPreview(preview) {
+        if (!preview) return;
+        const div = document.createElement('div');
+        div.className = 'ai-gen-preview';
+
+        if (preview.type === 'image' && preview.url) {
+            div.innerHTML = `<img src="${preview.url}" alt="AI Generated">
+                <div class="ai-gen-actions">
+                    <button class="btn btn-primary btn-sm" data-action="add-tl">+ Timeline</button>
+                    <button class="btn btn-ghost btn-sm" data-action="save-vault">💾 Bóveda</button>
+                </div>`;
+
+            div.querySelector('[data-action="add-tl"]').addEventListener('click', () => {
+                if (window.stelaris?.stickers?.stickers?.length > 0) {
+                    const lastSticker = window.stelaris.stickers.stickers[window.stelaris.stickers.stickers.length - 1];
+                    window.stelaris.stickers.addToTimeline(lastSticker);
+                }
+            });
+        } else if (preview.type === 'search' && preview.results) {
+            div.className = 'ai-search-results';
+            div.innerHTML = preview.results.map(r =>
+                `<div class="ai-search-item">
+                    <div class="search-icon">${r.icon}</div>
+                    <div class="search-info"><span class="search-title">${r.title}</span><span class="search-desc">${r.desc}</span></div>
+                </div>`
+            ).join('');
+        }
+
         this.msgBox.appendChild(div);
         this.msgBox.scrollTop = this.msgBox.scrollHeight;
     }
@@ -1195,9 +1451,8 @@ class MultiplayerClient {
         // Disconnect
         this.disconnBtn.addEventListener('click', () => this._disconnect());
 
-        // Send cursor position on timeline mousemove
-        const tracks = document.getElementById('timeline-tracks');
-        tracks.addEventListener('mousemove', (e) => this._sendCursor(e));
+        // Send cursor position on workspace (global cursor tracking)
+        document.getElementById('workspace')?.addEventListener('mousemove', (e) => this._sendCursor(e));
 
         // Team chat send
         this.chatSendBtn.addEventListener('click', () => this._sendChat());
@@ -1205,6 +1460,15 @@ class MultiplayerClient {
 
         // Bus: listen for seek to broadcast
         this.bus.on('player:tick', (time) => this._broadcastState(time));
+
+        // Listen for effect changes to broadcast
+        this.bus.on('effect:update', (data) => this._broadcastEffect(data));
+
+        // Listen for notes changes to broadcast
+        const notesEl = document.getElementById('production-notes');
+        if (notesEl) {
+            notesEl.addEventListener('input', () => this._broadcastNotes(notesEl.value));
+        }
     }
 
     _openModal() {
@@ -1267,47 +1531,77 @@ class MultiplayerClient {
         this.bus.emit('toast:info', 'Desconectado de la sala');
     }
 
+    _sendCursor(e) {
+        if (!this.ws || this.ws.readyState !== 1 || !this.roomCode) return;
+        // Throttle to ~20fps
+        if (this._lastCursorSend && Date.now() - this._lastCursorSend < 50) return;
+        this._lastCursorSend = Date.now();
+        this.ws.send(JSON.stringify({ type: 'cursor', x: e.clientX, y: e.clientY }));
+    }
+
+    /* ── BROADCAST SYSTEM ── */
+    _setupBroadcaster() {
+        this.bus.on('multiplayer:broadcast', (data) => {
+            if (this.ws && this.ws.readyState === 1 && this.roomCode) {
+                this.ws.send(JSON.stringify(data));
+            }
+        });
+    }
+
     _onMessage(msg) {
         switch (msg.type) {
             case 'room-created':
-                this.userId = msg.userId;
-                this.color = msg.color;
-                this.roomCode = msg.code;
-                this.users = [{ id: msg.userId, name: this.nameInput.value.trim() || 'Editor', color: msg.color }];
-                this._updateUI();
-                this.bus.emit('toast:success', `Sala creada: ${msg.code}`);
-                break;
-
             case 'room-joined':
                 this.userId = msg.userId;
                 this.color = msg.color;
                 this.roomCode = msg.code;
-                this.users = msg.users;
+                this.users = msg.users || [msg.user];
                 this._updateUI();
-                this.bus.emit('toast:success', `Conectado a sala ${msg.code}`);
+                this._setupBroadcaster();
+                this._showSyncIndicator('Conectado a sala ' + msg.code);
                 break;
-
             case 'user-joined':
                 this.users = msg.users;
                 this._updateUI();
                 this.bus.emit('toast:info', `${msg.name} se unió a la sala`);
+                this._showSyncIndicator(`${msg.name} conectado`);
                 break;
-
             case 'user-left':
                 this.users = msg.users;
-                this._removeGhost(msg.userId);
                 this._updateUI();
+                this._removeGhost(msg.userId);
                 this.bus.emit('toast:info', `${msg.name} salió de la sala`);
                 break;
-
             case 'cursor':
-                this._updateGhost(msg.userId, msg.name, msg.color, msg.x, msg.time);
+                this._updateGhost(msg.userId, msg.name, msg.color, msg.x, msg.y);
                 break;
-
+            case 'sticker:add':
+                this.bus.emit('mp:sync-sticker', msg);
+                this._showSyncIndicator('Sticker sincronizado');
+                break;
             case 'chat':
                 this._addChatMsg(msg.name, msg.color, msg.text);
                 break;
-
+            case 'state-sync':
+                // Sync playback state from peer
+                if (msg.state?.time !== undefined) {
+                    this.bus.emit('player:seek', msg.state.time);
+                }
+                this._showSyncIndicator('Estado sincronizado');
+                break;
+            case 'note-sync':
+                // Sync production notes
+                const notesEl = document.getElementById('production-notes');
+                if (notesEl && msg.userId !== this.userId) {
+                    notesEl.value = msg.text;
+                }
+                break;
+            case 'effect-sync':
+                // Sync effect changes
+                if (msg.userId !== this.userId) {
+                    this.bus.emit('effect:update', msg.effect);
+                }
+                break;
             case 'error':
                 this.bus.emit('toast:error', msg.message);
                 break;
@@ -1322,7 +1616,6 @@ class MultiplayerClient {
     }
 
     _updateUI() {
-        // Modal
         if (this.roomCode) {
             this.formEl.classList.add('hidden');
             this.connectedEl.classList.remove('hidden');
@@ -1331,7 +1624,6 @@ class MultiplayerClient {
                 `<div class="mp-user-item"><span class="mp-user-dot" style="background:${u.color}"></span>${u.name}${u.id === this.userId ? ' (tú)' : ''}</div>`
             ).join('');
 
-            // Topbar
             this.mpStatus.classList.remove('hidden');
             this.mpRoomCode.textContent = this.roomCode;
             this.mpAvatars.innerHTML = this.users.map(u =>
@@ -1340,25 +1632,19 @@ class MultiplayerClient {
         }
     }
 
-    /* ── Ghost Cursors ── */
-    _sendCursor(e) {
-        if (!this.ws || this.ws.readyState !== 1 || !this.roomCode) return;
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        this.ws.send(JSON.stringify({ type: 'cursor', x }));
-    }
-
-    _updateGhost(userId, name, color, x) {
+    _updateGhost(userId, name, color, x, y) {
         let ghost = this._ghosts[userId];
         if (!ghost) {
             ghost = document.createElement('div');
-            ghost.className = 'ghost-cursor';
-            ghost.innerHTML = `<div class="ghost-cursor-line" style="background:${color}"></div>
-                               <div class="ghost-cursor-label" style="background:${color}">${name.slice(0, 6)}</div>`;
-            this.ghostLayer.appendChild(ghost);
+            ghost.className = 'ghost-cursor-global';
+            ghost.innerHTML = `<div class="gc-icon" style="color:${color}">▲</div>
+                               <div class="gc-label" style="background:${color}">${name.slice(0, 8)}</div>`;
+            document.body.appendChild(ghost);
             this._ghosts[userId] = ghost;
         }
-        ghost.style.transform = `translateX(${x}px)`;
+        // Position at absolute viewport coordinates
+        ghost.style.left = `${x}px`;
+        ghost.style.top = `${y}px`;
     }
 
     _removeGhost(userId) {
@@ -1366,6 +1652,16 @@ class MultiplayerClient {
             this._ghosts[userId].remove();
             delete this._ghosts[userId];
         }
+    }
+
+    _showSyncIndicator(text) {
+        let ind = document.querySelector('.sync-indicator');
+        if (ind) ind.remove();
+        ind = document.createElement('div');
+        ind.className = 'sync-indicator';
+        ind.innerHTML = `<div class="sync-dot"></div><span>${text}</span>`;
+        document.body.appendChild(ind);
+        setTimeout(() => ind.remove(), 3000);
     }
 
     /* ── Team Chat ── */
@@ -1388,40 +1684,359 @@ class MultiplayerClient {
 
     _broadcastState(time) {
         if (!this.ws || this.ws.readyState !== 1) return;
-        // Throttle to ~10fps
-        if (this._lastBroadcast && Date.now() - this._lastBroadcast < 100) return;
+        if (this._lastBroadcast && Date.now() - this._lastBroadcast < 200) return;
         this._lastBroadcast = Date.now();
+        this.ws.send(JSON.stringify({ type: 'state-sync', state: { time } }));
+    }
+
+    _broadcastEffect(effect) {
+        if (!this.ws || this.ws.readyState !== 1 || !this.roomCode) return;
+        this.ws.send(JSON.stringify({ type: 'effect-sync', effect }));
+    }
+
+    _broadcastNotes(text) {
+        if (!this.ws || this.ws.readyState !== 1 || !this.roomCode) return;
+        if (this._lastNoteBroadcast && Date.now() - this._lastNoteBroadcast < 500) return;
+        this._lastNoteBroadcast = Date.now();
+        this.ws.send(JSON.stringify({ type: 'note-sync', text }));
     }
 }
 
 /* ═══════════════════════════════════════════
-   §14  STICKER LAB
+   §14  STICKER STUDIO (DASHBOARD MODULE)
+   ═══════════════════════════════════════════ */
+class StickerStudioModule {
+    constructor(bus) {
+        this.bus = bus;
+        this.el = document.getElementById('sticker-studio-workspace');
+        this.canvas = document.getElementById('sticker-studio-canvas');
+        this.ctx = this.canvas.getContext('2d');
+
+        this.colorInp = document.getElementById('ss-color');
+        this.sizeInp = document.getElementById('ss-size');
+        this.opacityInp = document.getElementById('ss-opacity');
+        this.tools = document.querySelectorAll('.ss-tool');
+        this.textPanel = document.getElementById('ss-text-panel');
+        this.emptyMsg = document.getElementById('ss-empty-msg');
+
+        this.currentTool = 'brush';
+        this.isDrawing = false;
+        this._hasContent = false;
+        this._undoStack = [];
+        this._maxUndo = 20;
+
+        this._initCanvas();
+        this._bind();
+    }
+
+    _initCanvas() {
+        this.canvas.width = 800;
+        this.canvas.height = 800;
+        this.ctx.lineCap = 'round';
+        this.ctx.lineJoin = 'round';
+    }
+
+    _pushUndo() {
+        this._undoStack.push(this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height));
+        if (this._undoStack.length > this._maxUndo) this._undoStack.shift();
+    }
+
+    undo() {
+        if (this._undoStack.length === 0) return;
+        this.ctx.putImageData(this._undoStack.pop(), 0, 0);
+    }
+
+    _bind() {
+        // Canvas drawing
+        this.canvas.addEventListener('mousedown', (e) => this._startDrawing(e));
+        this.canvas.addEventListener('mousemove', (e) => this._draw(e));
+        this.canvas.addEventListener('mouseup', () => this._stopDrawing());
+        this.canvas.addEventListener('mouseleave', () => this._stopDrawing());
+
+        // Touch support
+        this.canvas.addEventListener('touchstart', (e) => { e.preventDefault(); this._startDrawing(e.touches[0]); }, { passive: false });
+        this.canvas.addEventListener('touchmove', (e) => { e.preventDefault(); this._draw(e.touches[0]); }, { passive: false });
+        this.canvas.addEventListener('touchend', () => this._stopDrawing());
+
+        // Tool selection
+        this.tools.forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.tools.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.currentTool = btn.dataset.tool;
+                // Show/hide text panel
+                if (this.textPanel) {
+                    this.textPanel.classList.toggle('hidden', this.currentTool !== 'text');
+                }
+            });
+        });
+
+        // Text tool add button
+        const textAddBtn = document.getElementById('ss-text-add');
+        if (textAddBtn) {
+            textAddBtn.addEventListener('click', () => this._addText());
+        }
+        const textInput = document.getElementById('ss-text-input');
+        if (textInput) {
+            textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._addText(); });
+        }
+
+        // Action buttons
+        document.getElementById('btn-sticker-ai-remove').addEventListener('click', () => this.removeBackground());
+        document.getElementById('btn-sticker-save-vault').addEventListener('click', () => this.saveToVault());
+        document.getElementById('btn-sticker-import').addEventListener('click', () => this.importBase());
+
+        // Drag and drop
+        this.canvas.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+        this.canvas.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                this._loadImageFile(file);
+            }
+        });
+
+        // Undo shortcut
+        this.el.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'z') { e.preventDefault(); this.undo(); }
+        });
+    }
+
+    _addText() {
+        const textInput = document.getElementById('ss-text-input');
+        const fontSelect = document.getElementById('ss-font-select');
+        const sizeInput = document.getElementById('ss-text-size');
+        const text = textInput?.value?.trim();
+        if (!text) return;
+
+        this._pushUndo();
+        const fontSize = parseInt(sizeInput?.value || 36);
+        const font = fontSelect?.value || 'Inter';
+        const color = this.colorInp.value;
+        const opacity = parseFloat(this.opacityInp?.value || 1);
+
+        this.ctx.save();
+        this.ctx.globalAlpha = opacity;
+        this.ctx.font = `bold ${fontSize}px "${font}", sans-serif`;
+        this.ctx.fillStyle = color;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        // Add text shadow for readability
+        this.ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        this.ctx.shadowBlur = 4;
+        this.ctx.shadowOffsetX = 2;
+        this.ctx.shadowOffsetY = 2;
+        this.ctx.fillText(text, this.canvas.width / 2, this.canvas.height / 2);
+        this.ctx.restore();
+
+        if (textInput) textInput.value = '';
+        this._markContent();
+        this.bus.emit('toast:success', 'Texto añadido al sticker');
+    }
+
+    _startDrawing(e) {
+        if (this.currentTool === 'text' || this.currentTool === 'select') return;
+        this._pushUndo();
+        this.isDrawing = true;
+        this.ctx.beginPath();
+        const { x, y } = this._getPos(e);
+        this.ctx.moveTo(x, y);
+    }
+
+    _draw(e) {
+        if (!this.isDrawing) return;
+        const { x, y } = this._getPos(e);
+        const opacity = parseFloat(this.opacityInp?.value || 1);
+
+        if (this.currentTool === 'eraser') {
+            this.ctx.globalCompositeOperation = 'destination-out';
+            this.ctx.globalAlpha = 1;
+        } else if (this.currentTool === 'shapes') {
+            // Shapes mode draws circles at cursor
+            this.ctx.globalCompositeOperation = 'source-over';
+            this.ctx.globalAlpha = opacity;
+            this.ctx.fillStyle = this.colorInp.value;
+            const size = parseInt(this.sizeInp.value);
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, size, 0, Math.PI * 2);
+            this.ctx.fill();
+            return;
+        } else {
+            this.ctx.globalCompositeOperation = 'source-over';
+            this.ctx.globalAlpha = opacity;
+            this.ctx.strokeStyle = this.colorInp.value;
+        }
+
+        this.ctx.lineWidth = this.sizeInp.value;
+        this.ctx.lineTo(x, y);
+        this.ctx.stroke();
+    }
+
+    _stopDrawing() {
+        if (this.isDrawing) this._markContent();
+        this.isDrawing = false;
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.globalAlpha = 1;
+    }
+
+    _markContent() {
+        this._hasContent = true;
+        if (this.emptyMsg) this.emptyMsg.style.display = 'none';
+    }
+
+    _getPos(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        return {
+            x: (e.clientX - rect.left) * (this.canvas.width / rect.width),
+            y: (e.clientY - rect.top) * (this.canvas.height / rect.height)
+        };
+    }
+
+    _loadImageFile(file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const img = new Image();
+            img.onload = () => {
+                this._pushUndo();
+                // Fit image within canvas preserving aspect ratio
+                const ratio = Math.min(this.canvas.width / img.width, this.canvas.height / img.height, 1);
+                const w = img.width * ratio;
+                const h = img.height * ratio;
+                const x = (this.canvas.width - w) / 2;
+                const y = (this.canvas.height - h) / 2;
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.drawImage(img, x, y, w, h);
+                this._markContent();
+            };
+            img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    async removeBackground() {
+        this.bus.emit('toast:info', '🧠 Iniciando IA de recorte con GPU...');
+        try {
+            if (typeof bodyPix === 'undefined') {
+                this.bus.emit('toast:warning', 'Cargando modelo BodyPix...');
+                // Wait for script to load
+                await new Promise(r => setTimeout(r, 2000));
+            }
+            if (typeof bodyPix !== 'undefined') {
+                const net = await bodyPix.load({
+                    architecture: 'MobileNetV1',
+                    outputStride: 16,
+                    multiplier: 0.75,
+                    quantBytes: 2
+                });
+                const segmentation = await net.segmentPerson(this.canvas, {
+                    flipHorizontal: false,
+                    internalResolution: 'medium',
+                    segmentationThreshold: 0.7
+                });
+
+                // Create transparent background
+                const imgData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                for (let i = 0; i < segmentation.data.length; i++) {
+                    if (segmentation.data[i] === 0) {
+                        // Background pixel → make transparent
+                        imgData.data[i * 4 + 3] = 0;
+                    }
+                }
+                this._pushUndo();
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.putImageData(imgData, 0, 0);
+                this.bus.emit('toast:success', '✨ Fondo removido con IA local');
+            } else {
+                // Fallback: Simple green-screen-like removal for demo
+                this._pushUndo();
+                const imgData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                const d = imgData.data;
+                for (let i = 0; i < d.length; i += 4) {
+                    // Remove near-white/near-black backgrounds
+                    const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+                    if (avg > 240 || avg < 15) d[i + 3] = 0;
+                }
+                this.ctx.putImageData(imgData, 0, 0);
+                this.bus.emit('toast:info', 'Recorte básico aplicado (BodyPix no disponible)');
+            }
+        } catch (err) {
+            console.error('[StickerStudio] BG removal error:', err);
+            this.bus.emit('toast:error', 'Error al procesar el recorte');
+        }
+    }
+
+    saveToVault() {
+        if (!this._hasContent) {
+            this.bus.emit('toast:warning', 'El lienzo está vacío');
+            return;
+        }
+        this.canvas.toBlob((blob) => {
+            if (blob) {
+                const file = new File([blob], `Sticker_${Date.now()}.png`, { type: 'image/png' });
+                if (window.stelaris?.vault) {
+                    window.stelaris.vault.addFile(file);
+                }
+                this.bus.emit('vault:save-asset', file);
+                this.bus.emit('toast:success', '🔒 Sticker guardado en la Bóveda');
+            }
+        }, 'image/png');
+    }
+
+    importBase() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) this._loadImageFile(file);
+        };
+        input.click();
+    }
+}
+
+/* ═══════════════════════════════════════════
+   §14.1  STICKER LAB (EDITOR INTEGRATION)
+   ═══════════════════════════════════════════ */
+/* ═══════════════════════════════════════════
+   §14.1  STICKER LAB (EDITOR INTEGRATION)
    ═══════════════════════════════════════════ */
 class StickerLab {
     constructor(bus) {
         this.bus = bus;
         this.stickers = [];
+        this.timelineStickers = [];
+        this._selectedClipId = null;
 
         this.grid = document.getElementById('sticker-grid');
-        this.emptyMsg = document.getElementById('sticker-empty');
         this.btnSnapshot = document.getElementById('btn-snapshot');
         this.preview = document.getElementById('sticker-preview');
         this.canvas = document.getElementById('sticker-canvas');
         this.btnSave = document.getElementById('sticker-save');
         this.btnDiscard = document.getElementById('sticker-discard');
-        this.toolBtn = document.getElementById('tool-snapshot');
 
         this._currentBlob = null;
-
+        this._dragState = null;
         this._bind();
     }
 
     _bind() {
         this.btnSnapshot.addEventListener('click', () => this.capture());
-        this.toolBtn.addEventListener('click', () => this.capture());
         this.btnSave.addEventListener('click', () => this._save());
         this.btnDiscard.addEventListener('click', () => this._discard());
+
         this.bus.on('sticker:snapshot', () => this.capture());
+        this.bus.on('vault:asset-added', () => this._loadFromVault());
+        this.bus.on('mp:sync-sticker', (data) => this._syncTimelineSticker(data));
+
+        // "Add Sticker" button in timeline toolbar
+        const btnAddSticker = document.getElementById('btn-add-sticker-tl');
+        if (btnAddSticker) {
+            btnAddSticker.addEventListener('click', () => this._openStickerGallery());
+        }
+
+        // Global mouse events for drag/resize
+        document.addEventListener('mousemove', (e) => this._onDragMove(e));
+        document.addEventListener('mouseup', () => this._onDragEnd());
     }
 
     async capture() {
@@ -1431,55 +2046,32 @@ class StickerLab {
             return;
         }
 
-        // Capture frame at full resolution
         const c = this.canvas;
         c.width = video.videoWidth;
         c.height = video.videoHeight;
         const ctx = c.getContext('2d');
         ctx.drawImage(video, 0, 0, c.width, c.height);
 
-        // Aplicar IA de recorte local (TensorFlow.js)
-        if (window.App && App.ai?.brain?.vision?.isAvailable) {
-            await App.ai.brain.vision.loadSegmentationModel();
-            await App.ai.brain.vision.removeBackground(c);
-        } else if (window.App && !App.ai?.brain?.vision?.isAvailable) {
-            this.bus.emit('toast:info', 'Recorte de fondo avanzado desactivado (sin TFJS)');
-        }
-
-        // Show preview
         this.preview.classList.remove('hidden');
         this._currentTime = video.currentTime;
 
-        c.toBlob((blob) => {
-            this._currentBlob = blob;
-        }, 'image/png');
-
-        this.bus.emit('toast:info', '📸 Frame capturado & procesado');
+        c.toBlob((blob) => { this._currentBlob = blob; }, 'image/png');
+        this.bus.emit('toast:info', '📸 Frame capturado');
     }
 
     _save() {
         if (!this._currentBlob) return;
-
         const url = URL.createObjectURL(this._currentBlob);
-        const name = `Sticker_${this._fmt(this._currentTime)}`;
-        const sticker = {
-            id: Date.now(),
-            url,
-            time: this._currentTime,
-            blob: this._currentBlob,
-        };
+        const name = `Sticker_${Date.now()}`;
+
+        const sticker = { id: Date.now(), url, blob: this._currentBlob };
         this.stickers.push(sticker);
         this._renderGrid();
 
-        // Enviar a la Bóveda Blindada
-        if (window.App?.vault) {
-            const vaultFile = new File([this._currentBlob], `${name}.png`, { type: 'image/png' });
-            App.vault.addFile(vaultFile);
-            this.bus.emit('toast:success', 'Sticker creado y cifrado en la Bóveda');
-        } else {
-            this.bus.emit('toast:success', 'Sticker guardado (Bóveda no disponible)');
+        if (window.stelaris?.vault) {
+            const file = new File([this._currentBlob], `${name}.png`, { type: 'image/png' });
+            window.stelaris.vault.addFile(file);
         }
-
         this._discard();
     }
 
@@ -1489,22 +2081,236 @@ class StickerLab {
     }
 
     _renderGrid() {
+        if (!this.grid) return;
         if (this.stickers.length === 0) {
-            this.grid.innerHTML = '<p class="sticker-empty">Captura frames del video para crear stickers</p>';
+            this.grid.innerHTML = '<p class="sticker-empty">Captura frames para crear stickers</p>';
             return;
         }
         this.grid.innerHTML = this.stickers.map(s => `
             <div class="sticker-thumb" data-id="${s.id}">
                 <img src="${s.url}" alt="Sticker">
-                <span class="sticker-thumb-time">${this._fmt(s.time)}</span>
+                <button class="btn-add-to-tl" title="Añadir al Timeline">+</button>
             </div>
         `).join('');
+
+        this.grid.querySelectorAll('.sticker-thumb').forEach(thumb => {
+            thumb.querySelector('.btn-add-to-tl').addEventListener('click', () => {
+                const s = this.stickers.find(x => x.id == thumb.dataset.id);
+                if (s) this.addToTimeline(s);
+            });
+        });
     }
 
-    _fmt(sec) {
-        const m = Math.floor(sec / 60);
-        const s = Math.floor(sec % 60);
-        return `${m}:${String(s).padStart(2, '0')}`;
+    addToTimeline(sticker) {
+        const video = document.getElementById('video-player');
+        const start = video?.currentTime || 0;
+        const duration = 3;
+
+        const clip = {
+            id: 'st_cl_' + Date.now(),
+            stickerId: sticker.id,
+            url: sticker.url,
+            startTime: start,
+            endTime: start + duration,
+            x: 50, y: 50, scale: 1, rotation: 0,
+            animIn: 'none', animOut: 'none', animSpeed: 0.5
+        };
+        this.timelineStickers.push(clip);
+        this._renderTimelineClips();
+        this.bus.emit('multiplayer:broadcast', { type: 'sticker:add', data: clip });
+        this.bus.emit('toast:success', '✨ Sticker añadido al timeline');
+    }
+
+    _renderTimelineClips() {
+        const container = document.getElementById('stickers-layer-container');
+        if (!container) return;
+
+        const totalDuration = window.stelaris?.timeline?._duration || 0;
+        if (totalDuration === 0) return;
+
+        container.innerHTML = '';
+        this.timelineStickers.forEach(clip => {
+            const el = document.createElement('div');
+            el.className = 'sticker-clip' + (clip.id === this._selectedClipId ? ' selected' : '');
+            el.dataset.clipId = clip.id;
+            const left = (clip.startTime / totalDuration) * 100;
+            const width = ((clip.endTime - clip.startTime) / totalDuration) * 100;
+
+            el.style.left = `${left}%`;
+            el.style.width = `${Math.max(width, 1)}%`;
+            el.innerHTML = `<img src="${clip.url}"><span>${this._fmtTime(clip.startTime)} → ${this._fmtTime(clip.endTime)}</span>
+                            <div class="clip-handle clip-handle-l"></div>
+                            <div class="clip-handle clip-handle-r"></div>`;
+
+            // Drag to reposition
+            el.addEventListener('mousedown', (e) => {
+                if (e.target.classList.contains('clip-handle')) return;
+                this._selectClip(clip.id);
+                this._dragState = { type: 'move', clipId: clip.id, startX: e.clientX, origStart: clip.startTime, origEnd: clip.endTime };
+                el.classList.add('dragging');
+                e.preventDefault();
+            });
+
+            // Click to select
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._selectClip(clip.id);
+            });
+
+            // Resize handles
+            el.querySelector('.clip-handle-l').addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+                this._dragState = { type: 'resize-l', clipId: clip.id, startX: e.clientX, origStart: clip.startTime };
+                e.preventDefault();
+            });
+            el.querySelector('.clip-handle-r').addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+                this._dragState = { type: 'resize-r', clipId: clip.id, startX: e.clientX, origEnd: clip.endTime };
+                e.preventDefault();
+            });
+
+            container.appendChild(el);
+        });
+
+        // Show animation panel for selected clip
+        this._renderAnimPanel();
+
+        document.getElementById('stickers-track-empty')?.classList.toggle('hidden', this.timelineStickers.length > 0);
+    }
+
+    _selectClip(id) {
+        this._selectedClipId = id;
+        document.querySelectorAll('.sticker-clip').forEach(el => {
+            el.classList.toggle('selected', el.dataset.clipId === id);
+        });
+        this._renderAnimPanel();
+    }
+
+    _renderAnimPanel() {
+        // Remove existing panels
+        document.querySelectorAll('.sticker-anim-panel').forEach(p => p.remove());
+
+        const clip = this.timelineStickers.find(c => c.id === this._selectedClipId);
+        if (!clip) return;
+
+        const el = document.querySelector(`.sticker-clip[data-clip-id="${clip.id}"]`);
+        if (!el) return;
+
+        const animations = ['none', 'fade', 'pop', 'slide', 'spin'];
+        const panel = document.createElement('div');
+        panel.className = 'sticker-anim-panel';
+        panel.innerHTML = `
+            <span class="anim-label">IN:</span>
+            ${animations.map(a => `<button class="anim-btn ${clip.animIn === a ? 'active' : ''}" data-dir="in" data-anim="${a}">${a === 'none' ? '—' : a.charAt(0).toUpperCase() + a.slice(1)}</button>`).join('')}
+            <span class="anim-label" style="margin-left:8px">OUT:</span>
+            ${animations.map(a => `<button class="anim-btn ${clip.animOut === a ? 'active' : ''}" data-dir="out" data-anim="${a}">${a === 'none' ? '—' : a.charAt(0).toUpperCase() + a.slice(1)}</button>`).join('')}
+            <span class="anim-label" style="margin-left:8px">⚡</span>
+            <input type="range" class="anim-speed" min="0.1" max="2" step="0.1" value="${clip.animSpeed || 0.5}">
+        `;
+
+        panel.querySelectorAll('.anim-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const dir = btn.dataset.dir;
+                const anim = btn.dataset.anim;
+                if (dir === 'in') clip.animIn = anim;
+                else clip.animOut = anim;
+                this._renderTimelineClips();
+                this.bus.emit('toast:info', `Animación ${dir === 'in' ? 'entrada' : 'salida'}: ${anim}`);
+            });
+        });
+
+        panel.querySelector('.anim-speed').addEventListener('input', (e) => {
+            clip.animSpeed = parseFloat(e.target.value);
+        });
+
+        el.style.position = 'absolute';  // Ensure positioning context
+        el.appendChild(panel);
+    }
+
+    _onDragMove(e) {
+        if (!this._dragState) return;
+        const container = document.getElementById('stickers-layer-container');
+        if (!container) return;
+
+        const totalDuration = window.stelaris?.timeline?._duration || 0;
+        if (totalDuration === 0) return;
+
+        const rect = container.getBoundingClientRect();
+        const pxPerSec = rect.width / totalDuration;
+        const dx = e.clientX - this._dragState.startX;
+        const dtSec = dx / pxPerSec;
+
+        const clip = this.timelineStickers.find(c => c.id === this._dragState.clipId);
+        if (!clip) return;
+
+        if (this._dragState.type === 'move') {
+            const dur = this._dragState.origEnd - this._dragState.origStart;
+            clip.startTime = Math.max(0, this._dragState.origStart + dtSec);
+            clip.endTime = clip.startTime + dur;
+            if (clip.endTime > totalDuration) {
+                clip.endTime = totalDuration;
+                clip.startTime = clip.endTime - dur;
+            }
+        } else if (this._dragState.type === 'resize-l') {
+            clip.startTime = Math.max(0, Math.min(this._dragState.origStart + dtSec, clip.endTime - 0.2));
+        } else if (this._dragState.type === 'resize-r') {
+            clip.endTime = Math.min(totalDuration, Math.max(this._dragState.origEnd + dtSec, clip.startTime + 0.2));
+        }
+
+        this._renderTimelineClips();
+    }
+
+    _onDragEnd() {
+        if (this._dragState) {
+            document.querySelectorAll('.sticker-clip.dragging').forEach(el => el.classList.remove('dragging'));
+            this._dragState = null;
+        }
+    }
+
+    _fmtTime(sec) {
+        const s = Math.floor(sec);
+        const m = Math.floor(s / 60);
+        return `${m}:${String(s % 60).padStart(2, '0')}`;
+    }
+
+    _openStickerGallery() {
+        // Toggle gallery panel near the button
+        let panel = document.querySelector('.sticker-gallery-panel');
+        if (panel) { panel.remove(); return; }
+
+        const allStickers = [...this.stickers];
+        panel = document.createElement('div');
+        panel.className = 'sticker-gallery-panel';
+        panel.innerHTML = `
+            <div class="sg-header"><h3>✨ Galería de Stickers</h3><button class="btn btn-ghost btn-xs sg-close">✕</button></div>
+            <div class="sg-body">
+                ${allStickers.length === 0
+                ? '<p style="grid-column:1/-1;text-align:center;color:var(--text-secondary);font-size:0.8rem">Sin stickers. Captura frames o crea en Sticker Studio.</p>'
+                : allStickers.map(s => `<div class="sg-item" data-id="${s.id}"><img src="${s.url}" alt=""></div>`).join('')}
+            </div>`;
+
+        panel.querySelector('.sg-close').addEventListener('click', () => panel.remove());
+        panel.querySelectorAll('.sg-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const s = allStickers.find(x => x.id == item.dataset.id);
+                if (s) { this.addToTimeline(s); panel.remove(); }
+            });
+        });
+
+        const btn = document.getElementById('btn-add-sticker-tl');
+        if (btn) btn.parentElement.style.position = 'relative';
+        btn?.parentElement.appendChild(panel);
+    }
+
+    _syncTimelineSticker(data) {
+        if (data.type === 'sticker:add') {
+            this.timelineStickers.push(data.data);
+        }
+        this._renderTimelineClips();
+    }
+
+    _loadFromVault() {
+        this._renderGrid();
     }
 }
 
@@ -1635,11 +2441,11 @@ class ImageEditorModule {
         const btnMiniatura = document.getElementById('img-btn-miniatura');
         if (btnMiniatura) {
             btnMiniatura.addEventListener('click', async () => {
-                if (window.App && window.App.stickerLab) {
+                if (window.stelaris && window.stelaris.stickers) {
                     this.bus.emit('toast:info', 'Procesando miniatura desde el video...');
-                    await window.App.stickerLab.capture();
-                    if (window.App.stickerLab._currentBlob) {
-                        const file = new File([window.App.stickerLab._currentBlob], 'miniatura.png', { type: 'image/png' });
+                    await window.stelaris.stickers.capture();
+                    if (window.stelaris.stickers._currentBlob) {
+                        const file = new File([window.stelaris.stickers._currentBlob], 'miniatura.png', { type: 'image/png' });
                         this.loadImage(file);
                         this.bus.emit('toast:success', '🖼️ Miniatura lista para edición');
                     }
@@ -1649,12 +2455,12 @@ class ImageEditorModule {
 
         this.btnRemoveBg.addEventListener('click', async () => {
             if (!this.currentImage) return this.bus.emit('toast:warning', 'Carga una imagen primero');
-            if (!window.App || !window.App.ai?.brain?.vision?.isAvailable) {
+            if (!window.stelaris || !window.stelaris.ai?.brain?.vision?.isAvailable) {
                 return this.bus.emit('toast:warning', 'TensorFlow.js no está cargado');
             }
             this.bus.emit('toast:info', 'Recortando fondo con GPU...');
-            await window.App.ai.brain.vision.loadSegmentationModel();
-            await window.App.ai.brain.vision.removeBackground(this.canvas);
+            await window.stelaris.ai.brain.vision.loadSegmentationModel();
+            await window.stelaris.ai.brain.vision.removeBackground(this.canvas);
 
             // Re-store the edited image internally from canvas
             const img = new Image();
@@ -1683,9 +2489,9 @@ class ImageEditorModule {
         this.btnExport.addEventListener('click', () => {
             if (!this.currentImage) return this.bus.emit('toast:warning', 'No hay imagen para exportar');
             this.canvas.toBlob((blob) => {
-                if (window.App && window.App.vault) {
+                if (window.stelaris && window.stelaris.vault) {
                     const f = new File([blob], `StelarImage_${Date.now()}.png`, { type: 'image/png' });
-                    window.App.vault.addFile(f);
+                    window.stelaris.vault.addFile(f);
                     this.bus.emit('toast:success', 'Imagen exportada a la Bóveda Segura');
                 } else {
                     this.bus.emit('toast:error', 'Bóveda no disponible');
@@ -1860,13 +2666,36 @@ class DashboardModule {
             b.classList.toggle('active', b.dataset.view === view);
         });
 
-        if (this.viewTitle) {
-            this.viewTitle.textContent =
-                view === 'projects' ? 'Tus Proyectos' :
-                    view === 'vault' ? 'Bóveda Blindada 🔐' :
-                        view.toUpperCase();
+        // Toggle action bars
+        const projectActions = document.getElementById('ds-project-actions');
+        const stickerActions = document.getElementById('ds-sticker-actions');
+        const stickerWorkspace = document.getElementById('sticker-studio-workspace');
+        const projectGrid = document.getElementById('project-grid');
+
+        if (view === 'stickers-studio') {
+            projectActions?.classList.add('hidden');
+            stickerActions?.classList.remove('hidden');
+            projectGrid?.classList.add('hidden');
+            stickerWorkspace?.classList.remove('hidden');
+            if (this.viewTitle) this.viewTitle.textContent = '✨ Sticker Studio';
+
+            if (!this.stickerStudio) {
+                this.stickerStudio = new StickerStudioModule(this.bus);
+            }
+        } else {
+            projectActions?.classList.remove('hidden');
+            stickerActions?.classList.add('hidden');
+            projectGrid?.classList.remove('hidden');
+            stickerWorkspace?.classList.add('hidden');
+
+            if (this.viewTitle) {
+                this.viewTitle.textContent =
+                    view === 'projects' ? 'Tus Proyectos' :
+                        view === 'vault' ? 'Bóveda Blindada 🔐' :
+                            view.toUpperCase();
+            }
+            this._render();
         }
-        this._render();
     }
 
     _render() {

@@ -30,11 +30,26 @@ wss.on('connection', (ws) => {
             case 'create-room': handleCreate(ws, msg); break;
             case 'join-room': handleJoin(ws, msg); break;
             case 'leave-room': handleLeave(ws); break;
-            case 'cursor': broadcast(ws, { type: 'cursor', userId: ws._id, name: ws._name, color: ws._color, x: msg.x, time: msg.time }); break;
+            case 'cursor':
+                broadcast(ws, { type: 'cursor', userId: ws._id, name: ws._name, color: ws._color, x: msg.x, y: msg.y });
+                break;
             case 'lock-clip': broadcast(ws, { type: 'lock-clip', userId: ws._id, clipId: msg.clipId }); break;
             case 'unlock-clip': broadcast(ws, { type: 'unlock-clip', userId: ws._id, clipId: msg.clipId }); break;
-            case 'chat': broadcast(ws, { type: 'chat', userId: ws._id, name: ws._name, color: ws._color, text: msg.text, ts: Date.now() }); break;
-            case 'state-sync': broadcast(ws, { type: 'state-sync', userId: ws._id, state: msg.state }); break;
+            case 'chat':
+                broadcast(ws, { type: 'chat', userId: ws._id, name: ws._name, color: ws._color, text: msg.text, ts: Date.now() });
+                break;
+            case 'state-sync':
+                broadcast(ws, { type: 'state-sync', userId: ws._id, state: msg.state });
+                break;
+            case 'note-sync':
+                broadcast(ws, { type: 'note-sync', userId: ws._id, text: msg.text });
+                break;
+            case 'effect-sync':
+                broadcast(ws, { type: 'effect-sync', userId: ws._id, effect: msg.effect });
+                break;
+            case 'sticker:add':
+                broadcast(ws, { type: 'sticker:add', userId: ws._id, data: msg.data });
+                break;
         }
     });
 
@@ -49,7 +64,7 @@ function handleCreate(ws, msg) {
     ws._room = code;
     room.users.set(ws._id, ws);
     rooms.set(code, room);
-    ws.send(JSON.stringify({ type: 'room-created', code, userId: ws._id, color: ws._color }));
+    ws.send(JSON.stringify({ type: 'room-created', code, userId: ws._id, color: ws._color, users: [{ id: ws._id, name: ws._name, color: ws._color }] }));
     console.log(`[Room ${code}] Created by ${ws._name}`);
 }
 

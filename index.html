@@ -72,6 +72,7 @@
             </div>
             <nav class="ds-nav">
                 <button class="ds-nav-btn active" data-view="projects">📁 Proyectos</button>
+                <button class="ds-nav-btn" data-view="stickers-studio">✨ Sticker Studio</button>
                 <button class="ds-nav-btn" data-view="templates">🎬 Plantillas</button>
                 <button class="ds-nav-btn" data-view="vault">🔒 Bóveda</button>
                 <button class="ds-nav-btn" data-view="settings">⚙️ Ajustes</button>
@@ -87,11 +88,16 @@
         <main class="dashboard-main">
             <header class="ds-header">
                 <h1 id="ds-view-title">Tus Proyectos</h1>
-                <div class="ds-actions">
+                <div class="ds-actions" id="ds-project-actions">
                     <div class="ds-search">
                         <input type="text" placeholder="Buscar proyecto..." id="ds-search-input">
                     </div>
                     <button class="btn btn-primary" id="btn-new-project">+ Nuevo Proyecto</button>
+                </div>
+                <div class="ds-actions hidden" id="ds-sticker-actions">
+                    <button class="btn btn-ghost" id="btn-sticker-import">📥 Importar Base</button>
+                    <button class="btn btn-primary" id="btn-sticker-ai-remove">🧠 IA: Quitar Fondo</button>
+                    <button class="btn btn-success" id="btn-sticker-save-vault">🔒 Guardar en Bóveda</button>
                 </div>
             </header>
             <div class="ds-content">
@@ -100,6 +106,40 @@
                     <div class="project-card-empty">
                         <div class="pce-icon">📁</div>
                         <p>No hay proyectos aún. ¡Crea el primero!</p>
+                    </div>
+                </div>
+                <!-- ✨ STELAR STICKER STUDIO WORKSPACE ✨ -->
+                <div id="sticker-studio-workspace" class="sticker-studio-workspace hidden">
+                    <div class="ss-toolbar-top">
+                        <div class="ss-tools">
+                            <button class="ss-tool active" data-tool="select" title="Seleccionar">🖱️</button>
+                            <button class="ss-tool" data-tool="brush" title="Pincel">🖌️</button>
+                            <button class="ss-tool" data-tool="text" title="Texto">T</button>
+                            <button class="ss-tool" data-tool="eraser" title="Borrador">🧽</button>
+                            <button class="ss-tool" data-tool="shapes" title="Formas">⬡</button>
+                        </div>
+                        <div class="ss-params">
+                            <input type="color" id="ss-color" value="#00e0ff" title="Color">
+                            <input type="range" id="ss-size" min="1" max="100" value="5" title="Tamaño">
+                            <input type="range" id="ss-opacity" min="0" max="1" step="0.05" value="1" title="Opacidad">
+                        </div>
+                    </div>
+                    <div class="ss-canvas-area">
+                        <canvas id="sticker-studio-canvas"></canvas>
+                        <div class="ss-empty-msg" id="ss-empty-msg">Arrastra una imagen o empieza a dibujar</div>
+                        <!-- Text Input Panel (shown when text tool is active) -->
+                        <div class="ss-text-panel hidden" id="ss-text-panel">
+                            <input type="text" id="ss-text-input" placeholder="Escribe aquí..." autocomplete="off">
+                            <select id="ss-font-select">
+                                <option value="Inter">Inter</option>
+                                <option value="JetBrains Mono">Mono</option>
+                                <option value="Georgia">Serif</option>
+                                <option value="Impact">Impact</option>
+                                <option value="Comic Sans MS">Comic</option>
+                            </select>
+                            <input type="range" id="ss-text-size" min="12" max="120" value="36" title="Tamaño de texto">
+                            <button class="btn btn-primary btn-sm" id="ss-text-add">✓ Añadir</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -317,7 +357,9 @@
                             <button class="tl-btn" id="btn-zoom-in" title="Acercar">+</button>
                         </div>
                         <div class="timeline-toolbar-right">
-                            <button class="tl-btn" id="btn-mark-in" title="Marcar Entrada (In)">[</button>
+                            <button class="tl-btn" id="btn-add-sticker-tl" title="Agregar Sticker desde Bóveda"
+                                style="font-size:0.85rem">✨ Sticker</button>
+                            <button class="tl-btn" id="btn-mark-in" title="Marcar Entrada (In)">]</button>
                             <button class="tl-btn" id="btn-mark-out" title="Marcar Salida (Out)">]</button>
                             <button class="tl-btn" id="btn-clear-range" title="Limpiar Rango">✕</button>
                             <button class="tl-btn" id="btn-snap" title="Snap magnético">🧲</button>
@@ -342,6 +384,18 @@
                                     <div class="track-empty-msg" id="video-track-empty">Sin video cargado</div>
                                 </div>
                             </div>
+
+                            <!-- ✨ NUEVO: CARRIL DE STICKERS ✨ -->
+                            <div class="track track-stickers" id="track-stickers">
+                                <div class="track-label"><span class="track-icon">✨</span><span
+                                        class="track-name">Stickers</span></div>
+                                <div class="track-content" id="track-stickers-content">
+                                    <div id="stickers-layer-container" class="stickers-layer-container"></div>
+                                    <div class="track-empty-msg" id="stickers-track-empty">Añade elementos desde la
+                                        biblioteca</div>
+                                </div>
+                            </div>
+
                             <div class="track track-audio" id="track-audio">
                                 <div class="track-label"><span class="track-icon">🎵</span><span
                                         class="track-name">Audio</span></div>
