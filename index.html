@@ -135,6 +135,18 @@
                 </div>
             </div>
             <div class="topbar-right">
+                <button class="topbar-btn" id="btn-lock-project" title="Hacer Privado (Mover a Bóveda)">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-unlock">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-lock hidden">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                    </svg>
+                </button>
                 <button class="topbar-btn" id="btn-multiplayer" title="Multiplayer">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -368,7 +380,17 @@
                 <div class="sidebar-tabs" id="sidebar-tabs">
                     <button class="stab active" data-tab="props" id="stab-props">Propiedades</button>
                     <button class="stab" data-tab="stickers" id="stab-stickers">Stickers</button>
+                    <button class="stab" data-tab="notes" id="stab-notes">Notas</button>
                     <button class="stab" data-tab="team-chat" id="stab-teamchat">Chat</button>
+                </div>
+
+                <!-- Production Notes Tab -->
+                <div class="stab-panel" id="tab-notes">
+                    <div class="panel-notes-container">
+                        <textarea id="production-notes"
+                            placeholder="Escribe aquí tus instrucciones, ideas o recordatorios para este proyecto..."></textarea>
+                        <div class="notes-status" id="notes-status">Auto-guardado activo ✓</div>
+                    </div>
                 </div>
 
                 <!-- Properties Tab (Arsenal Maestro Nova Star) -->
@@ -635,6 +657,9 @@
             </div>
             <div class="vault-setup hidden" id="vault-setup">
                 <p>Configura tu PIN de seguridad (4–15 dígitos)</p>
+            </div>
+            <div class="vault-footer">
+                <button class="btn btn-ghost btn-xs" id="btn-vault-change-pin">✏️ Cambiar PIN</button>
             </div>
         </div>
     </div>

@@ -725,65 +725,56 @@ class VaultModule {
     }
 
     _bind() {
-        // Keypad clicks
         this.keypad.addEventListener('click', (e) => {
             const btn = e.target.closest('.vault-key');
             if (!btn || this._locked) return;
             const key = btn.dataset.key;
-
-            if (key === 'backspace') {
-                this._pin = this._pin.slice(0, -1);
-            } else if (key === 'enter') {
-                this._submit();
-            } else {
-                if (this._pin.length < this.cfg.maxPinLength) {
-                    this._pin += key;
-                }
-            }
+            if (key === 'backspace') this._pin = this._pin.slice(0, -1);
+            else if (key === 'enter') this._submit();
+            else if (this._pin.length < 15) this._pin += key;
             this._renderDots();
         });
 
-        // Keyboard support
         document.addEventListener('keydown', (e) => {
             if (this.overlay.classList.contains('hidden')) return;
-
             if (e.key >= '0' && e.key <= '9') {
-                if (this._pin.length < this.cfg.maxPinLength) this._pin += e.key;
+                if (this._pin.length < 15) this._pin += e.key;
                 this._renderDots();
             } else if (e.key === 'Backspace') {
                 this._pin = this._pin.slice(0, -1);
                 this._renderDots();
-            } else if (e.key === 'Enter') {
-                this._submit();
-            } else if (e.key === 'Escape') {
-                this.close();
-            }
+            } else if (e.key === 'Enter') this._submit();
         });
 
         this.btnClose.addEventListener('click', () => this.close());
         this.bus.on('vault:open', () => this.open());
+        document.getElementById('btn-vault-change-pin').addEventListener('click', () => {
+            this._isSetup = true;
+            this._updateUI();
+            this.bus.emit('toast:info', 'Configura tu nuevo PIN');
+        });
     }
 
     open() {
+        this.overlay.classList.remove('unlocked'); // Reset visual state
         this._pin = '';
         this._isSetup = !localStorage.getItem(this.cfg.pinHashKey);
         this._updateUI();
         this._renderDots();
         this.overlay.classList.remove('hidden');
         this.overlay.classList.add('visible');
-        this.bus.emit('vault:opened');
     }
 
     close() {
         this.overlay.classList.add('hidden');
-        this.overlay.classList.remove('visible', 'success');
+        this.overlay.classList.remove('visible', 'success', 'unlocked');
         this._pin = '';
         this.bus.emit('vault:closed');
     }
 
     _updateUI() {
         if (this._isSetup) {
-            this.subtitle.textContent = 'Crea tu PIN de seguridad';
+            this.subtitle.textContent = 'Configura tu nuevo PIN';
             this.setupMsg.classList.remove('hidden');
         } else {
             this.subtitle.textContent = 'Ingresa tu PIN para acceder';
@@ -792,49 +783,50 @@ class VaultModule {
     }
 
     _renderDots() {
-        const max = Math.max(this._pin.length, this.cfg.minPinLength);
-        let html = '';
-        for (let i = 0; i < max; i++) {
-            html += `<div class="pin-dot${i < this._pin.length ? ' filled' : ''}"></div>`;
+        const dots = this.pinDisplay;
+        if (!dots) return;
+        const currentLength = this._pin.length;
+        dots.innerHTML = '';
+        for (let i = 0; i < 4; i++) {
+            const dot = document.createElement('div');
+            dot.className = `pin-dot ${i < currentLength ? 'filled' : ''}`;
+            dots.appendChild(dot);
         }
-        this.pinDisplay.innerHTML = html;
     }
 
     async _submit() {
-        if (this._pin.length < this.cfg.minPinLength) {
-            this.bus.emit('toast:warning', `El PIN debe tener al menos ${this.cfg.minPinLength} dígitos`);
+        if (this._pin.length < 4) {
+            this.bus.emit('toast:warning', 'El PIN debe tener al menos 4 dígitos');
             return;
         }
 
         const hash = await this._hash(this._pin);
 
         if (this._isSetup) {
-            // First time — save PIN
             localStorage.setItem(this.cfg.pinHashKey, hash);
             this._isSetup = false;
-            this.bus.emit('toast:success', 'PIN configurado correctamente 🔐');
+            this.bus.emit('toast:success', 'PIN actualizado con éxito 🔐');
             this._showSuccess();
         } else {
-            // Validate PIN
             const stored = localStorage.getItem(this.cfg.pinHashKey);
             if (hash === stored) {
                 this._attempts = 0;
-                this.bus.emit('toast:success', 'Bóveda desbloqueada ✓');
-                this._showSuccess();
+                this.overlay.classList.add('unlocked');
+                this.subtitle.textContent = 'Acceso concedido ✓';
+                this.bus.emit('toast:success', 'Bóveda desbloqueada');
                 this.bus.emit('vault:unlocked');
+
+                // Close after a short delay
+                setTimeout(() => this.close(), 1000);
             } else {
                 this._attempts++;
                 this._showError();
-                if (this._attempts >= this.cfg.maxAttempts) {
-                    this._lockout();
-                }
             }
         }
     }
 
     _showSuccess() {
         this.pinDisplay.classList.add('success');
-        this.overlay.classList.add('success');
         setTimeout(() => {
             this.close();
             this.pinDisplay.classList.remove('success');
@@ -843,7 +835,7 @@ class VaultModule {
 
     _showError() {
         this.pinDisplay.classList.add('shake');
-        this.bus.emit('toast:error', `PIN incorrecto (${this.cfg.maxAttempts - this._attempts} intentos restantes)`);
+        this.bus.emit('toast:error', `PIN incorrecto. Intentos: ${this._attempts}`);
         setTimeout(() => {
             this.pinDisplay.classList.remove('shake');
             this._pin = '';
@@ -851,24 +843,13 @@ class VaultModule {
         }, 600);
     }
 
-    _lockout() {
-        this._locked = true;
-        this.subtitle.textContent = 'Demasiados intentos. Espera 5 minutos.';
-        this.bus.emit('toast:error', 'Bóveda bloqueada por 5 minutos');
-        setTimeout(() => {
-            this._locked = false;
-            this._attempts = 0;
-            this._updateUI();
-        }, this.cfg.lockoutMs);
-    }
-
-    /** Simple SHA-256 hash for PIN storage */
     async _hash(pin) {
         const encoder = new TextEncoder();
-        const data = encoder.encode(pin + '_stelaris_salt_2026');
+        const data = encoder.encode(pin + '_stelaris_salt_v2');
         const buffer = await crypto.subtle.digest('SHA-256', data);
         return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
+}
 }
 
 /* ═══════════════════════════════════════════
@@ -1830,8 +1811,12 @@ class DashboardModule {
         this.appEl = document.getElementById('app');
         this.grid = document.getElementById('project-grid');
         this.btnNew = document.getElementById('btn-new-project');
+        this.viewTitle = document.getElementById('ds-view-title');
 
         this.projects = JSON.parse(localStorage.getItem('stelaris_projects') || '[]');
+        this.currentView = 'projects';
+        this.currentProjectId = null;
+
         this._bind();
         this._render();
     }
@@ -1845,34 +1830,71 @@ class DashboardModule {
         // Nav buttons
         document.querySelectorAll('.ds-nav-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.ds-nav-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
                 const view = btn.dataset.view;
-                const title = document.getElementById('ds-view-title');
-                if (title) {
-                    title.textContent =
-                        view === 'projects' ? 'Tus Proyectos' :
-                            view === 'vault' ? 'Bóveda Blindada' : view.toUpperCase();
+                if (view === 'vault' && this.currentView !== 'vault') {
+                    this.bus.emit('vault:open');
+                    return;
                 }
+                this.switchView(view);
             });
         });
+
+        this.bus.on('vault:unlocked', () => {
+            this.switchView('vault');
+        });
+
+        this.bus.on('project:lock-toggle', (isPrivate) => {
+            const p = this.projects.find(x => x.id === this.currentProjectId);
+            if (p) {
+                p.isPrivate = isPrivate;
+                p.updated = Date.now();
+                this._save();
+                this.bus.emit('toast:info', isPrivate ? 'Video movido a la Bóveda' : 'Video movido al Inicio');
+            }
+        });
+    }
+
+    switchView(view) {
+        this.currentView = view;
+        document.querySelectorAll('.ds-nav-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.view === view);
+        });
+
+        if (this.viewTitle) {
+            this.viewTitle.textContent =
+                view === 'projects' ? 'Tus Proyectos' :
+                    view === 'vault' ? 'Bóveda Blindada 🔐' :
+                        view.toUpperCase();
+        }
+        this._render();
     }
 
     _render() {
         if (!this.grid) return;
-        if (this.projects.length === 0) {
+
+        let filtered = [];
+        if (this.currentView === 'projects') {
+            filtered = this.projects.filter(p => !p.isPrivate);
+        } else if (this.currentView === 'vault') {
+            filtered = this.projects.filter(p => p.isPrivate);
+        } else {
+            filtered = this.projects;
+        }
+
+        if (filtered.length === 0) {
             this.grid.innerHTML = `
                 <div class="project-card-empty">
-                    <div class="pce-icon">📁</div>
-                    <p>No hay proyectos aún. ¡Crea el primero!</p>
+                    <div class="pce-icon">${this.currentView === 'vault' ? '🔒' : '📁'}</div>
+                    <p>${this.currentView === 'vault' ? 'La bóveda está vacía.' : 'No hay proyectos aún.'}</p>
                 </div>`;
             return;
         }
 
-        this.grid.innerHTML = this.projects.map(p => `
-            <div class="project-card" data-id="${p.id}">
+        this.grid.innerHTML = filtered.map(p => `
+            <div class="project-card ${p.isPrivate ? 'card-private' : ''}" data-id="${p.id}">
                 <div class="pc-thumb">
                     <img src="${p.thumb || ''}" alt="">
+                    ${p.isPrivate ? '<span class="pc-lock-badge">🔒</span>' : ''}
                     <span class="pc-duration">${p.duration || '00:00'}</span>
                 </div>
                 <div class="pc-body">
@@ -1897,7 +1919,9 @@ class DashboardModule {
             title,
             updated: Date.now(),
             duration: '00:00',
-            thumb: 'https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?q=80&w=400&h=240&auto=format&fit=crop'
+            isPrivate: this.currentView === 'vault',
+            thumb: 'https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?q=80&w=400&h=240&auto=format&fit=crop',
+            notes: ''
         };
 
         this.projects.unshift(newProject);
@@ -1907,21 +1931,52 @@ class DashboardModule {
     }
 
     openProject(id) {
+        this.currentProjectId = id;
         const p = this.projects.find(x => x.id === id);
         if (!p) return;
 
         const pTitle = document.getElementById('topbar-project');
         if (pTitle) pTitle.textContent = p.title;
-        this.bus.emit('toast:info', `Abriendo ${p.title}...`);
 
+        // Load notes
+        const notesEl = document.getElementById('production-notes');
+        if (notesEl) notesEl.value = p.notes || '';
+
+        // Update lock button UI
+        const lockBtn = document.getElementById('btn-lock-project');
+        if (lockBtn) {
+            lockBtn.classList.toggle('locked', !!p.isPrivate);
+            lockBtn.querySelector('.icon-lock').classList.toggle('hidden', !p.isPrivate);
+            lockBtn.querySelector('.icon-unlock').classList.toggle('hidden', !!p.isPrivate);
+        }
+
+        this.bus.emit('toast:info', `Abriendo ${p.title}...`);
         this.el.classList.add('hidden');
         this.appEl.classList.remove('hidden');
         this.appEl.classList.add('visible');
     }
 
     closeProject() {
+        const p = this.projects.find(x => x.id === this.currentProjectId);
+
+        // Save notes before closing
+        const notesEl = document.getElementById('production-notes');
+        if (p && notesEl) {
+            p.notes = notesEl.value;
+            p.updated = Date.now();
+            this._save();
+        }
+
         this.appEl.classList.add('hidden');
         this.el.classList.remove('hidden');
+
+        // Decide where to go back
+        if (p && p.isPrivate) {
+            this.switchView('vault');
+        } else {
+            this.switchView('projects');
+        }
+
         this.bus.emit('toast:info', 'Proyecto guardado y cerrado');
     }
 
@@ -1976,9 +2031,19 @@ class StelarisApp {
             this._showMoodSelector();
         }
 
+        this.tabs = new SidebarTabs(this.bus);
+
         // GUI Bindings
         document.getElementById('btn-theme-toggle').addEventListener('click', () => this.theme.toggle());
         document.getElementById('btn-vault').addEventListener('click', () => this.bus.emit('vault:open'));
+
+        const lockBtn = document.getElementById('btn-lock-project');
+        lockBtn.addEventListener('click', () => {
+            const isLocked = lockBtn.classList.toggle('locked');
+            lockBtn.querySelector('.icon-lock').classList.toggle('hidden', !isLocked);
+            lockBtn.querySelector('.icon-unlock').classList.toggle('hidden', isLocked);
+            this.bus.emit('project:lock-toggle', isLocked);
+        });
 
         // Shortcuts
         document.addEventListener('keydown', (e) => {

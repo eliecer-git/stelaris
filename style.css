@@ -2754,3 +2754,111 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--color-primary);
 }
+
+/* 🔒 PRIVACY LOCK & NOTES */
+.topbar-btn#btn-lock-project.locked {
+    color: var(--color-primary);
+    background: rgba(var(--color-primary-rgb), 0.1);
+}
+
+.topbar-btn .icon-lock, .topbar-btn .icon-unlock {
+    width: 18px;
+    height: 18px;
+}
+
+#tab-notes {
+    height: 100%;
+}
+
+.panel-notes-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    gap: 0.8rem;
+}
+
+#production-notes {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: none;
+    line-height: 1.5;
+    transition: border-color 0.2s;
+}
+
+#production-notes:focus {
+    border-color: var(--color-primary);
+    outline: none;
+}
+
+.notes-status {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-align: right;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.4rem;
+}
+
+/* 🔒 VAULT FOOTER & ADJUSTMENTS */
+.vault-footer {
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-top: 2rem;
+    padding-top: 1rem;
+    display: flex;
+    justify-content: center;
+}
+
+.vault-overlay.unlocked .vault-keypad {
+    display: none;
+}
+
+.vault-overlay.unlocked #vault-subtitle {
+    color: var(--color-success);
+}
+
+/* DASHBOARD PRIVATE CARDS & BADGES */
+.pc-lock-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--bg-main);
+    color: var(--color-primary);
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    border: 1px solid var(--border-color);
+}
+
+.project-card.card-private {
+    border-color: rgba(var(--color-primary-rgb), 0.3);
+}
+
+.ds-nav-btn[data-view="vault"] {
+    color: var(--color-primary);
+    position: relative;
+}
+
+.ds-nav-btn[data-view="vault"]::after {
+    content: '🔐';
+    margin-left: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.ds-view-title {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
