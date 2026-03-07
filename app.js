@@ -1916,52 +1916,21 @@ class StickerStudioModule {
     async removeBackground() {
         this.bus.emit('toast:info', '🧠 Iniciando IA de recorte con GPU...');
         try {
-            if (typeof bodyPix === 'undefined') {
-                this.bus.emit('toast:warning', 'Cargando modelo BodyPix...');
-                // Wait for script to load
-                await new Promise(r => setTimeout(r, 2000));
+            if (!window.stelaris?.ai?.brain?.vision?.isAvailable) {
+                return this.bus.emit('toast:warning', 'TensorFlow.js/BodyPix no está cargado');
             }
-            if (typeof bodyPix !== 'undefined') {
-                const net = await bodyPix.load({
-                    architecture: 'MobileNetV1',
-                    outputStride: 16,
-                    multiplier: 0.75,
-                    quantBytes: 2
-                });
-                const segmentation = await net.segmentPerson(this.canvas, {
-                    flipHorizontal: false,
-                    internalResolution: 'medium',
-                    segmentationThreshold: 0.7
-                });
 
-                // Create transparent background
-                const imgData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-                for (let i = 0; i < segmentation.data.length; i++) {
-                    if (segmentation.data[i] === 0) {
-                        // Background pixel → make transparent
-                        imgData.data[i * 4 + 3] = 0;
-                    }
-                }
-                this._pushUndo();
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                this.ctx.putImageData(imgData, 0, 0);
-                this.bus.emit('toast:success', '✨ Fondo removido con IA local');
-            } else {
-                // Fallback: Simple green-screen-like removal for demo
-                this._pushUndo();
-                const imgData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-                const d = imgData.data;
-                for (let i = 0; i < d.length; i += 4) {
-                    // Remove near-white/near-black backgrounds
-                    const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-                    if (avg > 240 || avg < 15) d[i + 3] = 0;
-                }
-                this.ctx.putImageData(imgData, 0, 0);
-                this.bus.emit('toast:info', 'Recorte básico aplicado (BodyPix no disponible)');
-            }
-        } catch (err) {
-            console.error('[StickerStudio] BG removal error:', err);
-            this.bus.emit('toast:error', 'Error al procesar el recorte');
+            this.bus.emit('toast:info', '⏳ Cargando modelo de segmentación GPU...');
+            await window.stelaris.ai.brain.vision.loadSegmentationModel();
+
+            this._pushUndo();
+            await window.stelaris.ai.brain.vision.removeBackground(this.canvas);
+
+            // The canvas is modified in place, we just need to alert success
+            this.bus.emit('toast:success', '✨ Fondo removido con IA local (GPU)');
+        } catch (e) {
+            console.error('[StickerStudio] Remove BG failed:', e);
+            this.bus.emit('toast:error', '❌ Error al recortar fondo');
         }
     }
 
@@ -2055,8 +2024,23 @@ class StickerLab {
         this.preview.classList.remove('hidden');
         this._currentTime = video.currentTime;
 
-        c.toBlob((blob) => { this._currentBlob = blob; }, 'image/png');
-        this.bus.emit('toast:info', '📸 Frame capturado');
+        // Create blob and auto-save instantly
+        const blob = await new Promise(resolve => c.toBlob(resolve, 'image/png'));
+        this._currentBlob = blob;
+
+        // Auto-save to sticker gallery
+        const url = URL.createObjectURL(blob);
+        const sticker = { id: Date.now(), url, blob, time: video.currentTime };
+        this.stickers.push(sticker);
+        this._renderGrid();
+
+        // Auto-save to vault
+        if (window.stelaris?.vault) {
+            const file = new File([blob], `Frame_${Math.floor(video.currentTime * 100) / 100}s_${Date.now()}.png`, { type: 'image/png' });
+            window.stelaris.vault.addFile(file);
+        }
+
+        this.bus.emit('toast:success', `📸 Frame capturado a los ${video.currentTime.toFixed(2)}s — guardado en Stickers y Bóveda`);
     }
 
     _save() {
@@ -2666,11 +2650,14 @@ class DashboardModule {
             b.classList.toggle('active', b.dataset.view === view);
         });
 
-        // Toggle action bars
         const projectActions = document.getElementById('ds-project-actions');
         const stickerActions = document.getElementById('ds-sticker-actions');
         const stickerWorkspace = document.getElementById('sticker-studio-workspace');
         const projectGrid = document.getElementById('project-grid');
+
+        // Hide all specialty views first
+        stickerActions?.classList.add('hidden');
+        stickerWorkspace?.classList.add('hidden');
 
         if (view === 'stickers-studio') {
             projectActions?.classList.add('hidden');
@@ -2678,24 +2665,162 @@ class DashboardModule {
             projectGrid?.classList.add('hidden');
             stickerWorkspace?.classList.remove('hidden');
             if (this.viewTitle) this.viewTitle.textContent = '✨ Sticker Studio';
-
             if (!this.stickerStudio) {
                 this.stickerStudio = new StickerStudioModule(this.bus);
             }
-        } else {
-            projectActions?.classList.remove('hidden');
-            stickerActions?.classList.add('hidden');
+        } else if (view === 'templates') {
+            projectActions?.classList.add('hidden');
             projectGrid?.classList.remove('hidden');
-            stickerWorkspace?.classList.add('hidden');
-
-            if (this.viewTitle) {
-                this.viewTitle.textContent =
-                    view === 'projects' ? 'Tus Proyectos' :
-                        view === 'vault' ? 'Bóveda Blindada 🔐' :
-                            view.toUpperCase();
-            }
+            if (this.viewTitle) this.viewTitle.textContent = '🏛 Plantillas';
+            this._renderTemplates();
+        } else if (view === 'settings') {
+            projectActions?.classList.add('hidden');
+            projectGrid?.classList.remove('hidden');
+            if (this.viewTitle) this.viewTitle.textContent = '⚙️ Ajustes';
+            this._renderSettings();
+        } else if (view === 'vault') {
+            projectActions?.classList.remove('hidden');
+            projectGrid?.classList.remove('hidden');
+            if (this.viewTitle) this.viewTitle.textContent = 'Bóveda Blindada 🔐';
+            this._render();
+        } else {
+            // Default: projects
+            projectActions?.classList.remove('hidden');
+            projectGrid?.classList.remove('hidden');
+            if (this.viewTitle) this.viewTitle.textContent = 'Tus Proyectos';
             this._render();
         }
+    }
+
+    _renderTemplates() {
+        const grid = document.getElementById('project-grid');
+        if (!grid) return;
+        grid.innerHTML = `
+            <div class="project-card" data-tpl="vlog" style="cursor:pointer">
+                <div class="pc-thumb" style="background:linear-gradient(135deg,#0a0a1e,#1a0a2e);display:flex;align-items:center;justify-content:center">
+                    <span style="font-size:2.5rem">🎬</span>
+                </div>
+                <div class="pc-body"><span class="pc-title">Vlog Personal</span><span class="pc-meta">16:9 · 1080p · 30fps</span></div>
+            </div>
+            <div class="project-card" data-tpl="short" style="cursor:pointer">
+                <div class="pc-thumb" style="background:linear-gradient(135deg,#1a0a0a,#2e0a1a);display:flex;align-items:center;justify-content:center">
+                    <span style="font-size:2.5rem">📱</span>
+                </div>
+                <div class="pc-body"><span class="pc-title">Short / Reel</span><span class="pc-meta">9:16 · 1080p · 60fps</span></div>
+            </div>
+            <div class="project-card" data-tpl="cinematic" style="cursor:pointer">
+                <div class="pc-thumb" style="background:linear-gradient(135deg,#0a0e1a,#0a2e2e);display:flex;align-items:center;justify-content:center">
+                    <span style="font-size:2.5rem">🎞️</span>
+                </div>
+                <div class="pc-body"><span class="pc-title">Cinemático</span><span class="pc-meta">21:9 · 4K · 24fps</span></div>
+            </div>
+            <div class="project-card" data-tpl="presentation" style="cursor:pointer">
+                <div class="pc-thumb" style="background:linear-gradient(135deg,#0e0a1a,#1a1a2e);display:flex;align-items:center;justify-content:center">
+                    <span style="font-size:2.5rem">📊</span>
+                </div>
+                <div class="pc-body"><span class="pc-title">Presentación</span><span class="pc-meta">16:9 · 1080p · Slideshow</span></div>
+            </div>
+        `;
+        grid.querySelectorAll('.project-card[data-tpl]').forEach(card => {
+            card.addEventListener('click', () => {
+                const tplName = card.dataset.tpl;
+                const title = card.querySelector('.pc-title')?.textContent || 'Nuevo Proyecto';
+                this._createProjectFromTemplate(tplName, title);
+            });
+        });
+    }
+
+    _createProjectFromTemplate(tpl, title) {
+        const id = 'proj_' + Date.now();
+        this.projects.push({ id, title: `${title} - ${new Date().toLocaleDateString()}`, updated: Date.now(), duration: '00:00', isPrivate: false, thumb: '', notes: '' });
+        this._save();
+        this.bus.emit('toast:success', `📋 Proyecto creado desde plantilla "${title}"`);
+        this.openProject(id);
+    }
+
+    _renderSettings() {
+        const grid = document.getElementById('project-grid');
+        if (!grid) return;
+        const currentTheme = document.documentElement.dataset.theme || 'gamer';
+        const hasPro = localStorage.getItem('STELARIS_LICENSE') === 'PRO_ACTIVE';
+
+        grid.innerHTML = `
+            <div class="ds-settings-section" style="grid-column:1/-1; padding:0">
+                <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:14px;padding:1.5rem;margin-bottom:1.5rem">
+                    <h3 style="font-size:1rem;margin-bottom:1rem">🎨 Tema Visual</h3>
+                    <div style="display:flex;gap:1rem">
+                        <button class="btn ${currentTheme === 'gamer' ? 'btn-primary' : 'btn-ghost'}" id="set-theme-gamer" style="flex:1">🎮 Gamer</button>
+                        <button class="btn ${currentTheme === 'canva' ? 'btn-primary' : 'btn-ghost'}" id="set-theme-canva" style="flex:1">🎨 Canva</button>
+                    </div>
+                </div>
+
+                <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:14px;padding:1.5rem;margin-bottom:1.5rem">
+                    <h3 style="font-size:1rem;margin-bottom:1rem">🔑 Licencia</h3>
+                    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-bottom:1rem">
+                        Estado: <strong style="color:${hasPro ? 'var(--color-success)' : 'var(--color-warning)'}">${hasPro ? '✅ PRO Activado' : '⚠️ Versión Gratuita'}</strong>
+                    </p>
+                    ${!hasPro ? `
+                        <div style="display:flex;gap:0.5rem">
+                            <input type="text" id="settings-license-key" class="modal-input" placeholder="STELAR-2026-PRO" style="flex:1;text-align:left;font-family:var(--font-mono);letter-spacing:0.1em">
+                            <button class="btn btn-primary" id="settings-activate-btn">Activar</button>
+                        </div>
+                    ` : '<p style="color:var(--color-text-muted);font-size:0.8rem">Todas las funciones están desbloqueadas.</p>'}
+                </div>
+
+                <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:14px;padding:1.5rem;margin-bottom:1.5rem">
+                    <h3 style="font-size:1rem;margin-bottom:1rem">💾 Datos</h3>
+                    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-bottom:1rem">Proyectos guardados: <strong style="color:var(--color-text)">${this.projects.length}</strong></p>
+                    <div style="display:flex;gap:1rem">
+                        <button class="btn btn-ghost" id="settings-export-btn" style="flex:1">📦 Exportar datos</button>
+                        <button class="btn btn-ghost" id="settings-clear-btn" style="flex:1;color:var(--color-error)">🗑 Limpiar todo</button>
+                    </div>
+                </div>
+
+                <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:14px;padding:1.5rem">
+                    <h3 style="font-size:1rem;margin-bottom:0.5rem">ℹ️ Acerca de</h3>
+                    <p style="color:var(--color-text-secondary);font-size:0.85rem;line-height:1.6">
+                        <strong style="color:var(--color-text)">STELARIS PRO</strong> v2.0.0<br>
+                        Editor de Video Profesional con IA Local<br>
+                        © 2026 Eliecer Git
+                    </p>
+                </div>
+            </div>
+        `;
+
+        // Bind settings actions
+        document.getElementById('set-theme-gamer')?.addEventListener('click', () => {
+            this.bus.emit('theme:set', 'gamer');
+            this.bus.emit('toast:success', '🎮 Tema Gamer activado');
+            setTimeout(() => this._renderSettings(), 300);
+        });
+        document.getElementById('set-theme-canva')?.addEventListener('click', () => {
+            this.bus.emit('theme:set', 'canva');
+            this.bus.emit('toast:success', '🎨 Tema Canva activado');
+            setTimeout(() => this._renderSettings(), 300);
+        });
+        document.getElementById('settings-activate-btn')?.addEventListener('click', () => {
+            const key = document.getElementById('settings-license-key')?.value?.trim();
+            if (key && window.stelaris?.license?.activatePro(key)) {
+                this._renderSettings();
+            }
+        });
+        document.getElementById('settings-export-btn')?.addEventListener('click', () => {
+            const data = JSON.stringify({ projects: this.projects, license: localStorage.getItem('STELARIS_LICENSE') }, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `stelaris_backup_${Date.now()}.json`;
+            a.click();
+            this.bus.emit('toast:success', '📦 Datos exportados');
+        });
+        document.getElementById('settings-clear-btn')?.addEventListener('click', () => {
+            if (confirm('¿Estás seguro? Esto eliminará todos los proyectos guardados.')) {
+                this.projects = [];
+                this._save();
+                this.bus.emit('toast:info', '🗑 Datos limpiados');
+                this._renderSettings();
+            }
+        });
     }
 
     _render() {

@@ -3868,3 +3868,473 @@ body {
 #editor-image-main.hidden {
   display: none;
 }
+
+/* ═══════════════════════════════════════════
+   §FIX.1  ULTRA-MINIMAL SCROLLBARS
+   ═══════════════════════════════════════════ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 99px;
+  transition: background 0.3s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--color-primary-rgb), 0.25);
+}
+
+/* Auto-hide effect: only show on hover */
+.sidebar-right::-webkit-scrollbar-thumb,
+.team-chat-messages::-webkit-scrollbar-thumb,
+.assistant-messages::-webkit-scrollbar-thumb,
+.sticker-grid::-webkit-scrollbar-thumb,
+.dashboard-main::-webkit-scrollbar-thumb,
+.stab-panel::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.sidebar-right:hover::-webkit-scrollbar-thumb,
+.team-chat-messages:hover::-webkit-scrollbar-thumb,
+.assistant-messages:hover::-webkit-scrollbar-thumb,
+.sticker-grid:hover::-webkit-scrollbar-thumb,
+.dashboard-main:hover::-webkit-scrollbar-thumb,
+.stab-panel:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Canva theme scrollbars */
+[data-theme="canva"] * {
+  scrollbar-color: rgba(0, 0, 0, 0.06) transparent;
+}
+
+[data-theme="canva"] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="canva"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--color-primary-rgb), 0.2);
+}
+
+/* ═══════════════════════════════════════════
+   §FIX.2  TEXT OVERFLOW FIX
+   ═══════════════════════════════════════════ */
+
+/* Chat messages */
+.chat-msg {
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
+}
+
+.chat-msg-text {
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Production notes */
+#production-notes {
+  max-width: 100%;
+  box-sizing: border-box;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Sidebar panel content */
+.sidebar-right {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.stab-panel {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+/* Project card title & meta */
+.pc-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.pc-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Dashboard view title */
+.ds-view-title h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60vw;
+}
+
+/* Toast messages */
+.toast-message {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+}
+
+/* AI assistant messages */
+.assistant-msg {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+}
+
+/* Property panel values */
+.prop-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+/* ═══════════════════════════════════════════
+   §FIX.3  SIDEBAR ICON ALIGNMENT
+   ═══════════════════════════════════════════ */
+.tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  margin: 0 auto;
+  font-size: 1.05rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.tool-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  margin: 0 auto;
+}
+
+.sidebar-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.4rem 0;
+  gap: 0.15rem;
+  width: 100%;
+}
+
+.tool-divider {
+  width: 24px;
+  margin: 0.25rem auto;
+}
+
+/* ═══════════════════════════════════════════
+   §FIX.4  TIMELINE TRACK APPEARANCE
+   ═══════════════════════════════════════════ */
+.track-content {
+  position: relative;
+  background:
+    repeating-linear-gradient(90deg,
+      transparent, transparent 99px,
+      var(--border-color) 99px, var(--border-color) 100px);
+}
+
+/* Empty track subtle gradient */
+.track-empty-msg {
+  background: linear-gradient(90deg,
+      rgba(var(--color-primary-rgb), 0.02) 0%,
+      transparent 50%,
+      rgba(var(--color-accent-rgb), 0.02) 100%);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+/* Track borders */
+.track {
+  border-bottom: 1px solid var(--border-color);
+  min-height: var(--track-h);
+}
+
+.track:last-child {
+  border-bottom: none;
+}
+
+/* Track label icon better alignment */
+.track-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.track-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+/* ═══════════════════════════════════════════
+   §FIX.5  SETTINGS / VAULT TEXT CONTRAST
+   ═══════════════════════════════════════════ */
+
+/* Vault descriptive text */
+.vault-header p {
+  color: #aaa;
+}
+
+.vault-setup {
+  color: #999;
+}
+
+/* Settings section in dashboard */
+.ds-settings-section h3 {
+  color: var(--color-text);
+  margin-bottom: 0.8rem;
+}
+
+.ds-settings-section p,
+.ds-settings-section label,
+.ds-settings-section span {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+/* Pin key text readability */
+.vault-key {
+  color: #e8e8e8;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Paywall modal text contrast */
+.paywall-card .modal-desc {
+  color: var(--color-text-secondary);
+}
+
+.paywall-features {
+  color: var(--color-text);
+}
+
+.paywall-features strong {
+  color: var(--color-primary);
+}
+
+/* License input */
+#license-key {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ═══════════════════════════════════════════
+   §FIX.6  RESPONSIVE SCALING
+   ═══════════════════════════════════════════ */
+
+/* Prevent panel overlap on window resize */
+.workspace {
+  min-width: 0;
+}
+
+.editor-main {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.preview-viewport {
+  min-height: 200px;
+}
+
+/* Video scales but panels stay fixed */
+.preview-panel {
+  min-height: 0;
+  flex: 1;
+}
+
+.video-player {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+/* Right sidebar doesn't collapse below minimum */
+.sidebar-right {
+  min-width: 180px;
+  max-width: 260px;
+  flex-shrink: 0;
+}
+
+/* Medium screens: reduce right sidebar */
+@media (max-width: 1200px) {
+  .workspace {
+    grid-template-columns: var(--sidebar-w) 1fr 180px;
+  }
+
+  .sidebar-right {
+    padding: 0.5rem;
+    min-width: 160px;
+    max-width: 200px;
+  }
+
+  .stab {
+    font-size: 0.58rem;
+    padding: 0.4rem 0.1rem;
+  }
+}
+
+/* Small laptop screens */
+@media (max-width: 1024px) {
+
+  :root,
+  [data-theme="gamer"],
+  [data-theme="canva"] {
+    --timeline-h: 200px;
+    --track-h: 70px;
+  }
+
+  .preview-viewport {
+    min-height: 180px;
+  }
+
+  .player-controls {
+    padding: 0.25rem 0.6rem;
+  }
+
+  .timecode {
+    font-size: 0.65rem;
+  }
+}
+
+/* Ensure dashboard sidebar doesn't overlap */
+@media (max-width: 1024px) {
+  .dashboard-sidebar {
+    width: 80px;
+    padding: 1rem 0.5rem;
+  }
+
+  .ds-nav-btn span,
+  .ds-text,
+  .ds-username,
+  .ds-plan {
+    display: none;
+  }
+
+  .ds-nav-btn {
+    justify-content: center;
+    padding: 0.8rem;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   §FIX.7  GHOST CURSOR (GLOBAL VIEWPORT)
+   ═══════════════════════════════════════════ */
+.ghost-cursor-global {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  transition: left 80ms linear, top 80ms linear;
+  will-change: left, top;
+}
+
+.ghost-cursor-global .gc-icon {
+  font-size: 14px;
+  filter: drop-shadow(0 0 4px currentColor);
+  transform: rotate(-15deg);
+}
+
+.ghost-cursor-global .gc-label {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: #fff;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  white-space: nowrap;
+  opacity: 0.85;
+  margin-top: -2px;
+  margin-left: 8px;
+}
+
+/* ═══════════════════════════════════════════
+   §FIX.8  SYNC INDICATOR
+   ═══════════════════════════════════════════ */
+.sync-indicator {
+  position: fixed;
+  top: calc(var(--topbar-h) + 8px);
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.65rem;
+  color: var(--color-success);
+  z-index: var(--z-toast);
+  animation: syncFadeIn 0.3s ease, syncFadeOut 0.3s ease 2.7s forwards;
+}
+
+.sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+  animation: syncPulse 1s ease-in-out infinite;
+}
+
+@keyframes syncPulse {
+
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+@keyframes syncFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes syncFadeOut {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
