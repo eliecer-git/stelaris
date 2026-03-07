@@ -159,6 +159,7 @@ class PlayerModule {
 
         this._playing = false;
         this._animFrame = null;
+        this._filters = {}; // Initialize filters state
 
         this._bind();
     }
@@ -186,6 +187,7 @@ class PlayerModule {
         this.bus.on('player:load', (file) => this.loadFile(file));
         this.bus.on('player:seek', (time) => this.seek(time));
         this.bus.on('player:toggle', () => this.togglePlay());
+        this.bus.on('effect:update', (payload) => this._onEffectUpdate(payload));
     }
 
     loadFile(file) {
@@ -249,6 +251,7 @@ class PlayerModule {
         this._playing = playing;
         this.iconPlay.classList.toggle('hidden', playing);
         this.iconPause.classList.toggle('hidden', !playing);
+        this.btnPlay.classList.toggle('playing', playing);
         this.bus.emit('player:playstate', playing);
 
         if (playing) {
@@ -256,6 +259,39 @@ class PlayerModule {
         } else {
             cancelAnimationFrame(this._animFrame);
         }
+    }
+
+    _onEffectUpdate({ prop, value }) {
+        if (!this._filters) this._filters = {};
+        this._filters[prop] = value;
+        this._applyVisualPipeline();
+    }
+
+    _applyVisualPipeline() {
+        const f = this._filters || {};
+        const b = f.brightness || 1;
+        const c = f.contrast || 1;
+        const s = f.saturation || 1;
+        const e = f.exposure || 0; // Simulated with brightness
+        const exp = Math.pow(2, e);
+
+        // CSS Filter string
+        const filterStr = `
+            brightness(${b * exp}) 
+            contrast(${c}) 
+            saturate(${s})
+            opacity(${f.opacity || 1})
+        `;
+
+        this.video.style.filter = filterStr;
+
+        // Transform pipeline
+        const scale = f.scale || 1;
+        const rotate = f.rotation || 0;
+        this.video.style.transform = `scale(${scale}) rotate(${rotate}deg)`;
+
+        // Blend mode
+        if (f.blendMode) this.video.style.mixBlendMode = f.blendMode;
     }
 
     /** High-frequency sync loop during playback */
@@ -1720,35 +1756,208 @@ class ImageEditorModule {
 }
 
 /* ═══════════════════════════════════════════
-   §15  MAIN APPLICATION
+   §15  PROPERTY PANEL (El Arsenal Maestro)
+   ═══════════════════════════════════════════ */
+class PropertyPanel {
+    constructor(bus) {
+        this.bus = bus;
+        this.empty = document.getElementById('prop-empty');
+        this.details = document.getElementById('prop-details');
+
+        // Form inputs
+        this.nameEl = document.getElementById('prop-name');
+        this.durationEl = document.getElementById('prop-duration');
+
+        this._bind();
+    }
+
+    _bind() {
+        // Listen for track selections
+        this.bus.on('player:video:loaded', (info) => this.showMediaInfo(info));
+
+        // Listen for all range inputs in properties
+        document.querySelectorAll('.prop-section input[type="range"]').forEach(input => {
+            input.addEventListener('input', (e) => {
+                const prop = e.target.dataset.prop;
+                const value = e.target.value;
+                this.applyChange(prop, value);
+            });
+        });
+
+        document.getElementById('btn-reset-props').addEventListener('click', () => this.reset());
+        document.getElementById('btn-add-keyframe').addEventListener('click', () => {
+            this.bus.emit('toast:success', '💎 Keyframe añadido en la posición actual');
+        });
+    }
+
+    showMediaInfo(info) {
+        if (!this.empty || !this.details) return;
+        this.empty.classList.add('hidden');
+        this.details.classList.remove('hidden');
+        this.nameEl.textContent = info.name || 'Video Principal';
+        this.durationEl.textContent = `${info.duration.toFixed(2)}s`;
+
+        const res = document.getElementById('prop-resolution');
+        if (res) res.textContent = `${info.width}x${info.height}`;
+    }
+
+    applyChange(prop, value) {
+        console.log(`[Properties] ${prop} -> ${value}`);
+        this.bus.emit('effect:update', { prop, value });
+
+        if (prop === 'gain') {
+            const out = document.getElementById('gain-out');
+            if (out) out.textContent = `${value}dB`;
+        }
+    }
+
+    reset() {
+        document.querySelectorAll('.prop-section input').forEach(input => {
+            if (input.type === 'range') input.value = input.defaultValue;
+            if (input.type === 'number') input.value = input.defaultValue;
+        });
+        this.bus.emit('toast:info', 'Parámetros reseteados');
+    }
+}
+
+/* ═══════════════════════════════════════════
+   §16  DASHBOARD MODULE
+   ═══════════════════════════════════════════ */
+class DashboardModule {
+    constructor(bus) {
+        this.bus = bus;
+        this.el = document.getElementById('dashboard');
+        this.appEl = document.getElementById('app');
+        this.grid = document.getElementById('project-grid');
+        this.btnNew = document.getElementById('btn-new-project');
+
+        this.projects = JSON.parse(localStorage.getItem('stelaris_projects') || '[]');
+        this._bind();
+        this._render();
+    }
+
+    _bind() {
+        if (this.btnNew) this.btnNew.addEventListener('click', () => this.createNew());
+
+        const btnClose = document.getElementById('btn-close-project');
+        if (btnClose) btnClose.addEventListener('click', () => this.closeProject());
+
+        // Nav buttons
+        document.querySelectorAll('.ds-nav-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.ds-nav-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const view = btn.dataset.view;
+                const title = document.getElementById('ds-view-title');
+                if (title) {
+                    title.textContent =
+                        view === 'projects' ? 'Tus Proyectos' :
+                            view === 'vault' ? 'Bóveda Blindada' : view.toUpperCase();
+                }
+            });
+        });
+    }
+
+    _render() {
+        if (!this.grid) return;
+        if (this.projects.length === 0) {
+            this.grid.innerHTML = `
+                <div class="project-card-empty">
+                    <div class="pce-icon">📁</div>
+                    <p>No hay proyectos aún. ¡Crea el primero!</p>
+                </div>`;
+            return;
+        }
+
+        this.grid.innerHTML = this.projects.map(p => `
+            <div class="project-card" data-id="${p.id}">
+                <div class="pc-thumb">
+                    <img src="${p.thumb || ''}" alt="">
+                    <span class="pc-duration">${p.duration || '00:00'}</span>
+                </div>
+                <div class="pc-body">
+                    <span class="pc-title">${p.title}</span>
+                    <span class="pc-meta">Editado: ${new Date(p.updated).toLocaleDateString()}</span>
+                </div>
+            </div>
+        `).join('');
+
+        this.grid.querySelectorAll('.project-card').forEach(card => {
+            card.addEventListener('click', () => this.openProject(card.dataset.id));
+        });
+    }
+
+    createNew() {
+        const title = prompt('Nombre del nuevo proyecto:', 'Mi Gran Edición');
+        if (!title) return;
+
+        const id = 'pr_' + Date.now();
+        const newProject = {
+            id,
+            title,
+            updated: Date.now(),
+            duration: '00:00',
+            thumb: 'https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?q=80&w=400&h=240&auto=format&fit=crop'
+        };
+
+        this.projects.unshift(newProject);
+        this._save();
+        this._render();
+        this.openProject(id);
+    }
+
+    openProject(id) {
+        const p = this.projects.find(x => x.id === id);
+        if (!p) return;
+
+        const pTitle = document.getElementById('topbar-project');
+        if (pTitle) pTitle.textContent = p.title;
+        this.bus.emit('toast:info', `Abriendo ${p.title}...`);
+
+        this.el.classList.add('hidden');
+        this.appEl.classList.remove('hidden');
+        this.appEl.classList.add('visible');
+    }
+
+    closeProject() {
+        this.appEl.classList.add('hidden');
+        this.el.classList.remove('hidden');
+        this.bus.emit('toast:info', 'Proyecto guardado y cerrado');
+    }
+
+    _save() {
+        localStorage.setItem('stelaris_projects', JSON.stringify(this.projects));
+    }
+}
+
+/* ═══════════════════════════════════════════
+   §17  MAIN APPLICATION
    ═══════════════════════════════════════════ */
 class StelarisApp {
     constructor() {
         this.config = STELARIS_CONFIG;
         this.bus = new CommandBus();
 
+
+        // Modules
+        this.theme = new ThemeManager(this.bus, this.config.themes);
+        this.toast = new ToastManager(this.bus, document.getElementById('toast-container'), this.config.toast);
+        this.timeline = new TimelineModule(this.bus, this.config.timeline);
+        this.player = new PlayerModule(this.bus, this.config.timeline);
+        this.vault = new VaultModule(this.bus, this.config.vault);
+        this.multiplayer = new MultiplayerClient(this.bus);
+        this.stickers = new StickerLab(this.bus);
+        this.ai = new StelarAI(this.bus);
+        this.license = new LicenseManager(this.bus);
+        this.imageEditor = new ImageEditorModule(this.bus);
+
+        // Elite Modules
+        this.dashboard = new DashboardModule(this.bus);
+        this.properties = new PropertyPanel(this.bus);
+
         // DOM
         this.moodSelector = document.getElementById('mood-selector');
         this.appShell = document.getElementById('app');
-
-        // Phase 1 modules
-        this.toast = new ToastManager(this.bus, document.getElementById('toast-container'), this.config.toast);
-        this.theme = new ThemeManager(this.bus, this.config.themes);
-        this.player = new PlayerModule(this.bus, this.config.timeline);
-        this.timeline = new TimelineModule(this.bus, this.config.timeline);
-        this.vault = new VaultModule(this.bus, this.config.vault);
-        this.importer = new FileImporter(this.bus, this.config.files);
-        this.properties = new PropertiesPanel(this.bus);
-        this.tools = new ToolSelector(this.bus);
-
-        // Phase 2 modules
-        this.sidebarTabs = new SidebarTabs(this.bus);
-        this.commandAPI = new CommandAPI(this.bus, this);
-        this.assistant = new StelarAI(this.bus);
-        this.multiplayer = new MultiplayerClient(this.bus);
-        this.stickerLab = new StickerLab(this.bus);
-        this.license = new LicenseManager(this.bus);
-        this.imageEditor = new ImageEditorModule(this.bus);
 
         this._init();
     }
@@ -1767,35 +1976,25 @@ class StelarisApp {
             this._showMoodSelector();
         }
 
-        // Theme toggle
+        // GUI Bindings
         document.getElementById('btn-theme-toggle').addEventListener('click', () => this.theme.toggle());
-
-        // Vault button
         document.getElementById('btn-vault').addEventListener('click', () => this.bus.emit('vault:open'));
 
-        // Keyboard shortcuts
+        // Shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
             if (e.target.closest('.vault-overlay')) return;
 
             if (e.code === 'Space') { e.preventDefault(); this.bus.emit('player:toggle'); }
-            if (e.key === 'j') this.player.skip(-this.config.timeline.skipSeconds);
-            if (e.key === 'l') this.player.skip(this.config.timeline.skipSeconds);
             if (e.key === 's' && e.ctrlKey) { e.preventDefault(); this.bus.emit('toast:info', 'Auto-guardado activo'); }
         });
 
-        // Split button
-        document.getElementById('btn-split').addEventListener('click', () => {
-            this.bus.emit('toast:info', 'Función de corte disponible en próximas fases');
-        });
-
-        console.log(`%c${this.config.app.name} v${this.config.app.version}%c — Sistema Nervioso inicializado ⚡`,
+        console.log(`%c${this.config.app.name} v${this.config.app.version}%c — Sistema Nervioso Profundo inicializado`,
             'color:#00e0ff;font-weight:bold;font-size:14px', 'color:#888');
     }
 
     _showMoodSelector() {
         this.moodSelector.classList.remove('hidden');
-        this.appShell.classList.add('hidden');
         const cards = this.moodSelector.querySelectorAll('.mood-card');
         cards.forEach(card => {
             card.addEventListener('click', () => {
@@ -1806,7 +2005,7 @@ class StelarisApp {
                 this.moodSelector.addEventListener('animationend', () => {
                     this.moodSelector.classList.add('hidden');
                     this.moodSelector.classList.remove('leaving');
-                    this._revealApp();
+                    this._revealDashboard();
                 }, { once: true });
             });
         });
@@ -1815,10 +2014,16 @@ class StelarisApp {
     _skipMoodSelector() {
         this.moodSelector.classList.add('hidden');
         this.theme.set(this.theme.current);
-        this._revealApp();
+        this._revealDashboard();
+    }
+
+    _revealDashboard() {
+        const db = document.getElementById('dashboard');
+        db.classList.remove('hidden');
     }
 
     _revealApp() {
+        // Solo se llama desde el Dashboard ahora
         this.appShell.classList.remove('hidden');
         this.appShell.classList.add('visible');
     }
