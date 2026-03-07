@@ -1893,24 +1893,26 @@ class StickerStudioModule {
     }
 
     _loadImageFile(file) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            const img = new Image();
-            img.onload = () => {
-                this._pushUndo();
-                // Fit image within canvas preserving aspect ratio
-                const ratio = Math.min(this.canvas.width / img.width, this.canvas.height / img.height, 1);
-                const w = img.width * ratio;
-                const h = img.height * ratio;
-                const x = (this.canvas.width - w) / 2;
-                const y = (this.canvas.height - h) / 2;
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                this.ctx.drawImage(img, x, y, w, h);
-                this._markContent();
-            };
-            img.src = ev.target.result;
+        if (!file) return;
+        this.importBlob(file);
+    }
+
+    importBlob(blob) {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            this._pushUndo();
+            const ratio = Math.min(this.canvas.width / img.width, this.canvas.height / img.height, 1);
+            const w = img.width * ratio;
+            const h = img.height * ratio;
+            const x = (this.canvas.width - w) / 2;
+            const y = (this.canvas.height - h) / 2;
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.drawImage(img, x, y, w, h);
+            this._markContent();
+            URL.revokeObjectURL(url);
         };
-        reader.readAsDataURL(file);
+        img.src = url;
     }
 
     async removeBackground() {
@@ -2024,23 +2026,21 @@ class StickerLab {
         this.preview.classList.remove('hidden');
         this._currentTime = video.currentTime;
 
-        // Create blob and auto-save instantly
+        // Create blob
         const blob = await new Promise(resolve => c.toBlob(resolve, 'image/png'));
         this._currentBlob = blob;
 
-        // Auto-save to sticker gallery
-        const url = URL.createObjectURL(blob);
-        const sticker = { id: Date.now(), url, blob, time: video.currentTime };
-        this.stickers.push(sticker);
-        this._renderGrid();
-
-        // Auto-save to vault
-        if (window.stelaris?.vault) {
-            const file = new File([blob], `Frame_${Math.floor(video.currentTime * 100) / 100}s_${Date.now()}.png`, { type: 'image/png' });
-            window.stelaris.vault.addFile(file);
+        // Send to Sticker Studio instantly
+        if (window.stelaris?.dashboard) {
+            window.stelaris.dashboard.switchView('stickers-studio');
+            setTimeout(() => {
+                if (window.stelaris.dashboard.stickerStudio) {
+                    window.stelaris.dashboard.stickerStudio.importBlob(blob);
+                }
+            }, 150);
         }
 
-        this.bus.emit('toast:success', `📸 Frame capturado a los ${video.currentTime.toFixed(2)}s — guardado en Stickers y Bóveda`);
+        this.bus.emit('toast:success', '📸 Frame enviado al Sticker Studio');
     }
 
     _save() {
@@ -2756,7 +2756,7 @@ class DashboardModule {
 
                 <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:14px;padding:1.5rem;margin-bottom:1.5rem">
                     <h3 style="font-size:1rem;margin-bottom:1rem">🔑 Licencia</h3>
-                    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-bottom:1rem">
+                    <p style="color:#ccc;font-size:0.85rem;margin-bottom:1rem">
                         Estado: <strong style="color:${hasPro ? 'var(--color-success)' : 'var(--color-warning)'}">${hasPro ? '✅ PRO Activado' : '⚠️ Versión Gratuita'}</strong>
                     </p>
                     ${!hasPro ? `
@@ -2764,12 +2764,12 @@ class DashboardModule {
                             <input type="text" id="settings-license-key" class="modal-input" placeholder="STELAR-2026-PRO" style="flex:1;text-align:left;font-family:var(--font-mono);letter-spacing:0.1em">
                             <button class="btn btn-primary" id="settings-activate-btn">Activar</button>
                         </div>
-                    ` : '<p style="color:var(--color-text-muted);font-size:0.8rem">Todas las funciones están desbloqueadas.</p>'}
+                    ` : '<p style="color:#ccc;font-size:0.8rem">Todas las funciones están desbloqueadas.</p>'}
                 </div>
 
                 <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:14px;padding:1.5rem;margin-bottom:1.5rem">
                     <h3 style="font-size:1rem;margin-bottom:1rem">💾 Datos</h3>
-                    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-bottom:1rem">Proyectos guardados: <strong style="color:var(--color-text)">${this.projects.length}</strong></p>
+                    <p style="color:#ccc;font-size:0.85rem;margin-bottom:1rem">Proyectos guardados: <strong style="color:var(--color-text)">${this.projects.length}</strong></p>
                     <div style="display:flex;gap:1rem">
                         <button class="btn btn-ghost" id="settings-export-btn" style="flex:1">📦 Exportar datos</button>
                         <button class="btn btn-ghost" id="settings-clear-btn" style="flex:1;color:var(--color-error)">🗑 Limpiar todo</button>
@@ -2778,7 +2778,7 @@ class DashboardModule {
 
                 <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:14px;padding:1.5rem">
                     <h3 style="font-size:1rem;margin-bottom:0.5rem">ℹ️ Acerca de</h3>
-                    <p style="color:var(--color-text-secondary);font-size:0.85rem;line-height:1.6">
+                    <p style="color:#ccc;font-size:0.85rem;line-height:1.6">
                         <strong style="color:var(--color-text)">STELARIS PRO</strong> v2.0.0<br>
                         Editor de Video Profesional con IA Local<br>
                         © 2026 Eliecer Git

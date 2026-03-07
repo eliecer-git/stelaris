@@ -225,6 +225,13 @@ a {
   --scrollbar-thumb: rgba(0, 0, 0, .10);
 }
 
+@media (max-height: 850px) {
+  :root {
+    --timeline-h: 170px;
+    --track-h: 56px;
+  }
+}
+
 /* ── Base Body ────────────────────────────────── */
 body {
   background: var(--bg-primary);
@@ -652,10 +659,12 @@ body {
 }
 
 .sidebar-right {
-  border-right: none;
-  border-left: 1px solid var(--border-color);
   padding: .8rem;
-  overflow-y: auto;
+  overflow-y: hidden;
+  border-left: 1px solid var(--border-color);
+  border-right: none;
+  display: flex;
+  flex-direction: column;
 }
 
 /* tool buttons (left sidebar) */
@@ -1234,7 +1243,7 @@ body {
 }
 
 .vault-header p {
-  color: #888;
+  color: #bbb;
   font-size: .85rem;
   margin-top: .3rem;
 }
@@ -1394,7 +1403,7 @@ body {
 /* vault setup mode */
 .vault-setup {
   margin-top: 1.5rem;
-  color: #888;
+  color: #a0a0a0;
   font-size: .8rem;
 }
 
@@ -1573,9 +1582,13 @@ body {
    ══════════════════════════════════════════════ */
 .sidebar-tabs {
   display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border-color);
   margin-bottom: .6rem;
+  border-bottom: 1px solid var(--border-color);
+  gap: 0;
+  position: sticky;
+  top: 0;
+  background: var(--bg-surface);
+  z-index: 10;
 }
 
 .stab {
