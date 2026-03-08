@@ -70,12 +70,19 @@
                 <span class="ds-icon">✦</span>
                 <span class="ds-text">STELARIS PRO</span>
             </div>
-            <nav class="ds-nav">
+            <nav class="ds-nav" id="public-nav">
                 <button class="ds-nav-btn active" data-view="projects">📁 Proyectos</button>
                 <button class="ds-nav-btn" data-view="stickers-studio">✨ Sticker Studio</button>
                 <button class="ds-nav-btn" data-view="templates">🎬 Plantillas</button>
                 <button class="ds-nav-btn" data-view="vault">🔒 Bóveda</button>
                 <button class="ds-nav-btn" data-view="settings">⚙️ Ajustes</button>
+            </nav>
+            <nav class="ds-nav hidden" id="vault-nav">
+                <button class="ds-nav-btn active" data-view="vault-videos">🎬 Videos Privados</button>
+                <button class="ds-nav-btn" data-view="vault-photos">🖼️ Fotos Privadas</button>
+                <button class="ds-nav-btn" data-view="vault-stickers">✨ Stickers Privados</button>
+                <button class="ds-nav-btn" id="btn-exit-vault" style="margin-top:auto; color:#ff3355">🚪 Salir de
+                    Bóveda</button>
             </nav>
             <div class="ds-user">
                 <div class="ds-avatar">E</div>
@@ -117,6 +124,10 @@
                             <button class="ss-tool" data-tool="text" title="Texto">T</button>
                             <button class="ss-tool" data-tool="eraser" title="Borrador">🧽</button>
                             <button class="ss-tool" data-tool="shapes" title="Formas">⬡</button>
+                            <div class="ss-divider"
+                                style="width:1px;height:24px;background:var(--border-color);margin:0 0.5rem"></div>
+                            <button class="ss-tool" id="ss-layer-up" title="Subir Capa">🔼</button>
+                            <button class="ss-tool" id="ss-layer-down" title="Bajar Capa">🔽</button>
                         </div>
                         <div class="ss-params">
                             <input type="color" id="ss-color" value="#00e0ff" title="Color">
@@ -152,6 +163,7 @@
         <!-- Top Bar -->
         <header id="topbar" class="topbar">
             <div class="topbar-left">
+                <button id="btn-back-home" class="btn-back-home">Volver a Inicio</button>
                 <span class="topbar-logo" id="topbar-logo" aria-hidden="true">✦</span>
                 <h1 class="topbar-title" id="topbar-title">STELARIS PRO</h1>
                 <span class="topbar-version">2.0</span>
@@ -554,11 +566,14 @@
                                             </div>
                                         </div>
                                         <div class="mask-tools">
-                                            <label>Máscara</label>
+                                            <label>Máscara y Capas</label>
                                             <div class="btn-group-sm">
                                                 <button class="btn btn-ghost btn-xs">Círculo</button>
-                                                <button class="btn btn-ghost btn-xs">Pluma</button>
                                                 <button class="btn btn-ghost btn-xs">Rect</button>
+                                                <button class="btn btn-ghost btn-xs" id="btn-layer-up"
+                                                    title="Enviar al frente">🔼</button>
+                                                <button class="btn btn-ghost btn-xs" id="btn-layer-down"
+                                                    title="Enviar al fondo">🔽</button>
                                             </div>
                                         </div>
                                     </div>
@@ -697,18 +712,24 @@
                 <h2>Bóveda Segura</h2>
                 <p id="vault-subtitle">Ingresa tu PIN para acceder</p>
             </div>
-            <div class="vault-pin-display" id="vault-pin-display"></div>
-            <div class="vault-keypad" id="vault-keypad">
-                <button class="vault-key" data-key="1">1</button><button class="vault-key"
-                    data-key="2">2</button><button class="vault-key" data-key="3">3</button>
-                <button class="vault-key" data-key="4">4</button><button class="vault-key"
-                    data-key="5">5</button><button class="vault-key" data-key="6">6</button>
-                <button class="vault-key" data-key="7">7</button><button class="vault-key"
-                    data-key="8">8</button><button class="vault-key" data-key="9">9</button>
-                <button class="vault-key vault-key-action" data-key="backspace">⌫</button><button class="vault-key"
-                    data-key="0">0</button>
-                <button class="vault-key vault-key-action vault-key-enter" data-key="enter">✓</button>
+            <div class="vault-input-group" style="display: flex; gap: 0.5rem; margin: 1.5rem 0; position: relative;">
+                <input type="password" id="vault-pin-input" class="modal-input" placeholder="Ingresa PIN..."
+                    maxlength="15" autocomplete="off"
+                    style="flex: 1; text-align: center; letter-spacing: 0.2em; font-size: 1.2rem;">
+                <button type="button" class="btn-ghost btn-eye" id="vault-eye-btn"
+                    style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); padding: 5px;">👁️</button>
             </div>
+
+            <div id="vault-change-group" class="hidden"
+                style="display: flex; flex-direction: column; gap: 0.8rem; margin-bottom: 1.5rem;">
+                <input type="password" id="vault-new-pin-input" class="modal-input" placeholder="Nuevo PIN (4-15)..."
+                    maxlength="15" autocomplete="off" style="text-align: center; letter-spacing: 0.2em;">
+                <input type="password" id="vault-confirm-pin-input" class="modal-input" placeholder="Confirmar PIN..."
+                    maxlength="15" autocomplete="off" style="text-align: center; letter-spacing: 0.2em;">
+                <button class="btn btn-primary" id="btn-vault-confirm-change" style="margin-top: 0.5rem;">Guardar Nuevo
+                    PIN</button>
+            </div>
+
             <div class="vault-setup hidden" id="vault-setup">
                 <p>Configura tu PIN de seguridad (4–15 dígitos)</p>
             </div>
@@ -747,6 +768,7 @@
 
     <input type="file" id="file-input" accept="video/*" class="hidden-input">
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <!-- TensorFlow.js & BodyPix for Local Vision GPU -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.1/dist/body-pix.min.umd.js"></script>
@@ -754,6 +776,19 @@
     <script src="stelaris_config.js"></script>
     <script src="stelar-core.js"></script>
     <script src="app.js"></script>
+    <div id="new-project-modal" class="modal-overlay new-project-modal hidden">
+        <div class="modal-glass">
+            <h2>Crear Nuevo Proyecto</h2>
+            <input type="text" id="new-project-name" class="modal-input" placeholder="Nombre del proyecto..."
+                autocomplete="off">
+            <div class="modal-actions" style="margin-top: 1rem;">
+                <button class="btn btn-ghost" id="btn-cancel-project" style="flex:1">Cancelar</button>
+                <button class="btn btn-primary" id="btn-create-project-confirm"
+                    style="flex:1; background: linear-gradient(90deg, #00f2ff, #0077ff); border: none;">Crear</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 
 </html>

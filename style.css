@@ -3063,13 +3063,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-image:
-    linear-gradient(45deg, rgba(0, 0, 0, 0.08) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(0, 0, 0, 0.08) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgba(0, 0, 0, 0.08) 75%),
-    linear-gradient(-45deg, transparent 75%, rgba(0, 0, 0, 0.08) 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  background: #050505;
   overflow: hidden;
 }
 
@@ -4350,4 +4344,147 @@ body {
     opacity: 0;
     pointer-events: none;
   }
+}
+
+/* ═══════════════════════════════════════════════
+   STELARIS PRO 2.0 — ENTREGA 1 (Requerimientos de Usuario)
+   ═══════════════════════════════════════════════ */
+
+:root,
+[data-theme="gamer"],
+[data-theme="canva"] {
+  --bg-main: #050505 !important;
+  --bg-primary: #050505 !important;
+  --bg-secondary: #050505 !important;
+  --color-primary: #00f2ff !important;
+  --color-primary-rgb: 0, 242, 255 !important;
+  --bg-surface: #050505 !important;
+}
+
+body {
+  background: #050505 !important;
+}
+
+/* 1. Botón Volver a Inicio */
+.btn-back-home {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid #00f2ff;
+  color: #fff;
+  font-family: 'Inter', 'Montserrat', sans-serif;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  margin-right: 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-back-home:hover {
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 10px rgba(0, 242, 255, 0.7);
+}
+
+/* 2. Barra Lateral (Sidebar) de Dashboard */
+.dashboard-sidebar {
+  background: rgba(0, 0, 0, 0.8) !important;
+}
+
+.ds-nav-btn {
+  padding: 20px !important;
+  /* Requerimiento de espaciado */
+}
+
+.ds-nav-btn.active {
+  box-shadow: -15px 0 20px rgba(0, 242, 255, 0.5) inset !important;
+  border-left: 2px solid #00f2ff !important;
+  background: rgba(0, 242, 255, 0.05) !important;
+}
+
+/* 3. New Project Modal Glass */
+.new-project-modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  z-index: 9999;
+}
+
+.modal-glass {
+  background: rgba(10, 10, 10, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 2.5rem;
+  border-radius: 20px;
+  width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.modal-glass h2 {
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  font-size: 1.4rem;
+  color: #fff;
+  text-align: center;
+}
+
+/* Espaciado de texto (Todo contenedor de texto debe tener al menos 20px de margen interno) */
+.pc-body {
+  padding: 20px !important;
+}
+
+.project-card-empty {
+  padding: 40px 20px !important;
+}
+
+.assistant-msg {
+  padding: 20px !important;
+}
+
+.paywall-features {
+  padding: 20px !important;
+}
+
+.section-content {
+  padding: 20px !important;
+}
+
+.panel-details {
+  padding: 20px !important;
+}
+
+/* 4. Vault Blindada 3.0 */
+#vault-overlay.visible {
+  backdrop-filter: blur(30px) !important;
+  -webkit-backdrop-filter: blur(30px) !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+}
+
+.vault-container {
+  background: rgba(10, 10, 10, 0.8) !important;
+  border: 1px solid rgba(0, 242, 255, 0.3) !important;
+  box-shadow: 0 0 40px rgba(0, 242, 255, 0.1) !important;
+}
+
+#vault-eye-btn {
+  opacity: 0.6;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+
+#vault-eye-btn:hover {
+  opacity: 1;
+  color: #00f2ff;
+}
+
+.vault-input-group input:focus {
+  box-shadow: 0 0 15px rgba(0, 242, 255, 0.4) inset !important;
+  outline: none;
+  border-color: #00f2ff;
 }

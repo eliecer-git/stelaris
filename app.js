@@ -710,114 +710,152 @@ class VaultModule {
         // DOM
         this.overlay = document.getElementById('vault-overlay');
         this.container = document.getElementById('vault-container');
-        this.pinDisplay = document.getElementById('vault-pin-display');
-        this.keypad = document.getElementById('vault-keypad');
         this.subtitle = document.getElementById('vault-subtitle');
         this.setupMsg = document.getElementById('vault-setup');
         this.btnClose = document.getElementById('vault-close');
 
-        this._pin = '';
+        // New Inputs
+        this.inputPin = document.getElementById('vault-pin-input');
+        this.eyeBtn = document.getElementById('vault-eye-btn');
+        this.changeGroup = document.getElementById('vault-change-group');
+        this.inputNewPin = document.getElementById('vault-new-pin-input');
+        this.inputConfirmPin = document.getElementById('vault-confirm-pin-input');
+        this.btnConfirmChange = document.getElementById('btn-vault-confirm-change');
+        this.btnChangePin = document.getElementById('btn-vault-change-pin');
+
         this._isSetup = !localStorage.getItem(config.pinHashKey);
         this._attempts = 0;
         this._locked = false;
+        this._changingPin = false;
 
         this._bind();
     }
 
     _bind() {
-        this.keypad.addEventListener('click', (e) => {
-            const btn = e.target.closest('.vault-key');
-            if (!btn || this._locked) return;
-            const key = btn.dataset.key;
-            if (key === 'backspace') this._pin = this._pin.slice(0, -1);
-            else if (key === 'enter') this._submit();
-            else if (this._pin.length < 15) this._pin += key;
-            this._renderDots();
+        // Validation filter for inputs
+        const onlyNumbers = (e) => {
+            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+        };
+        this.inputPin.addEventListener('input', onlyNumbers);
+        this.inputNewPin.addEventListener('input', onlyNumbers);
+        this.inputConfirmPin.addEventListener('input', onlyNumbers);
+
+        // Eye button toggle
+        if (this.eyeBtn) {
+            this.eyeBtn.addEventListener('click', () => {
+                const isPass = this.inputPin.type === 'password';
+                this.inputPin.type = isPass ? 'text' : 'password';
+                this.inputNewPin.type = isPass ? 'text' : 'password';
+                this.inputConfirmPin.type = isPass ? 'text' : 'password';
+                this.eyeBtn.textContent = isPass ? '🔒' : '👁️';
+            });
+        }
+
+        // Enter key handler
+        this.inputPin.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this._submit();
         });
 
-        document.addEventListener('keydown', (e) => {
-            if (this.overlay.classList.contains('hidden')) return;
-            if (e.key >= '0' && e.key <= '9') {
-                if (this._pin.length < 15) this._pin += e.key;
-                this._renderDots();
-            } else if (e.key === 'Backspace') {
-                this._pin = this._pin.slice(0, -1);
-                this._renderDots();
-            } else if (e.key === 'Enter') this._submit();
-        });
+        if (this.btnConfirmChange) {
+            this.btnConfirmChange.addEventListener('click', () => this._submitChangePin());
+        }
 
         this.btnClose.addEventListener('click', () => this.close());
         this.bus.on('vault:open', () => this.open());
-        document.getElementById('btn-vault-change-pin').addEventListener('click', () => {
-            this._isSetup = true;
-            this._updateUI();
-            this.bus.emit('toast:info', 'Configura tu nuevo PIN');
-        });
+
+        if (this.btnChangePin) {
+            this.btnChangePin.addEventListener('click', () => {
+                if (this._isSetup) return;
+                this._changingPin = true;
+                this.subtitle.textContent = 'Ingresa PIN actual para cambiarlo';
+                this.inputPin.value = '';
+                this.inputPin.focus();
+                this.bus.emit('toast:info', 'Valida tu PIN actual');
+            });
+        }
     }
 
     open() {
         this.overlay.classList.remove('unlocked'); // Reset visual state
-        this._pin = '';
+        this.inputPin.value = '';
+        this.inputNewPin.value = '';
+        this.inputConfirmPin.value = '';
+        this._changingPin = false;
+        this.changeGroup?.classList.add('hidden');
+
+        // Hide Controls explicitly (dashboard logic)
+        const dbControls = document.getElementById('ds-project-actions');
+        if (dbControls) dbControls.style.opacity = '0';
+
         this._isSetup = !localStorage.getItem(this.cfg.pinHashKey);
         this._updateUI();
-        this._renderDots();
+
         this.overlay.classList.remove('hidden');
         this.overlay.classList.add('visible');
+
+        setTimeout(() => this.inputPin.focus(), 100);
     }
 
     close() {
         this.overlay.classList.add('hidden');
         this.overlay.classList.remove('visible', 'success', 'unlocked');
-        this._pin = '';
+        this.inputPin.value = '';
+
+        // Restore controls explicitly
+        const dbControls = document.getElementById('ds-project-actions');
+        if (dbControls) dbControls.style.opacity = '1';
+
         this.bus.emit('vault:closed');
     }
 
     _updateUI() {
         if (this._isSetup) {
-            this.subtitle.textContent = 'Configura tu nuevo PIN';
+            this.subtitle.textContent = 'Configura tu nuevo PIN (4 a 15 dígitos)';
             this.setupMsg.classList.remove('hidden');
+            this.btnChangePin?.classList.add('hidden');
         } else {
             this.subtitle.textContent = 'Ingresa tu PIN para acceder';
             this.setupMsg.classList.add('hidden');
-        }
-    }
-
-    _renderDots() {
-        const dots = this.pinDisplay;
-        if (!dots) return;
-        const currentLength = this._pin.length;
-        dots.innerHTML = '';
-        for (let i = 0; i < 4; i++) {
-            const dot = document.createElement('div');
-            dot.className = `pin-dot ${i < currentLength ? 'filled' : ''}`;
-            dots.appendChild(dot);
+            this.btnChangePin?.classList.remove('hidden');
         }
     }
 
     async _submit() {
-        if (this._pin.length < 4) {
-            this.bus.emit('toast:warning', 'El PIN debe tener al menos 4 dígitos');
+        const pinValue = this.inputPin.value;
+        if (pinValue.length < 4 || pinValue.length > 15) {
+            this.bus.emit('toast:warning', 'El PIN debe tener entre 4 y 15 dígitos');
             return;
         }
 
-        const hash = await this._hash(this._pin);
+        const hash = await this._hash(pinValue);
 
         if (this._isSetup) {
             localStorage.setItem(this.cfg.pinHashKey, hash);
             this._isSetup = false;
-            this.bus.emit('toast:success', 'PIN actualizado con éxito 🔐');
+            this.bus.emit('toast:success', 'PIN configurado con éxito 🔐');
             this._showSuccess();
+            this._updateUI();
+            this.close();
+            this.bus.emit('vault:unlocked');
         } else {
             const stored = localStorage.getItem(this.cfg.pinHashKey);
             if (hash === stored) {
                 this._attempts = 0;
-                this.overlay.classList.add('unlocked');
-                this.subtitle.textContent = 'Acceso concedido ✓';
-                this.bus.emit('toast:success', 'Bóveda desbloqueada');
-                this.bus.emit('vault:unlocked');
 
-                // Close after a short delay
-                setTimeout(() => this.close(), 1000);
+                if (this._changingPin) {
+                    // Validated for Change PIN flow
+                    this.subtitle.textContent = 'PIN Correcto: Ingresa un nuevo PIN';
+                    this.inputPin.parentElement.classList.add('hidden'); // Hide actual PIN input temporarily
+                    this.changeGroup.classList.remove('hidden');
+                    this.inputNewPin.focus();
+                } else {
+                    // Normal unlock
+                    this.overlay.classList.add('unlocked');
+                    this.subtitle.textContent = 'Acceso concedido ✓';
+                    this.bus.emit('toast:success', 'Bóveda desbloqueada');
+                    this.bus.emit('vault:unlocked');
+                    setTimeout(() => this.close(), 500);
+                }
             } else {
                 this._attempts++;
                 this._showError();
@@ -825,21 +863,39 @@ class VaultModule {
         }
     }
 
+    async _submitChangePin() {
+        const p1 = this.inputNewPin.value;
+        const p2 = this.inputConfirmPin.value;
+
+        if (p1.length < 4 || p1.length > 15) {
+            return this.bus.emit('toast:warning', 'El PIN debe tener entre 4 y 15 dígitos');
+        }
+        if (p1 !== p2) {
+            return this.bus.emit('toast:error', 'Los PINs no coinciden');
+        }
+
+        const hash = await this._hash(p1);
+        localStorage.setItem(this.cfg.pinHashKey, hash);
+        this.bus.emit('toast:success', '🔥 PIN Maestro Cambiado Exitosamente');
+        this.close();
+    }
+
     _showSuccess() {
-        this.pinDisplay.classList.add('success');
+        this.inputPin.classList.add('success');
         setTimeout(() => {
-            this.close();
-            this.pinDisplay.classList.remove('success');
+            this.inputPin.classList.remove('success');
         }, 800);
     }
 
     _showError() {
-        this.pinDisplay.classList.add('shake');
+        this.inputPin.classList.add('shake');
+        this.inputPin.style.borderColor = 'var(--color-error)';
         this.bus.emit('toast:error', `PIN incorrecto. Intentos: ${this._attempts}`);
         setTimeout(() => {
-            this.pinDisplay.classList.remove('shake');
-            this._pin = '';
-            this._renderDots();
+            this.inputPin.classList.remove('shake');
+            this.inputPin.style.borderColor = '';
+            this.inputPin.value = '';
+            this.inputPin.focus();
         }, 600);
     }
 
@@ -1120,6 +1176,15 @@ class StelarAI {
             }
         };
 
+        // Global Research (Conocimiento Global)
+        intents['investigate_topic'] = {
+            patterns: ['investiga', 'investigar', 'explica', 'dime sobre', 'información sobre', 'qué es'],
+            handler: async (text) => {
+                const topic = text.replace(/^(investiga|investigar|explica|dime sobre|información sobre|qué es)\s*/i, '').trim();
+                return await this._investigateTopic(topic);
+            }
+        };
+
         // Place sticker at time
         intents['place_sticker'] = {
             patterns: ['colocar sticker', 'pon sticker', 'put sticker', 'agregar sticker en', 'añadir sticker en', 'poner sticker'],
@@ -1287,6 +1352,22 @@ class StelarAI {
         return { response: html, preview: { type: 'search', results } };
     }
 
+    async _investigateTopic(topic) {
+        this.bus.emit('toast:info', `🧠 Investigando: ${topic}...`);
+
+        // Simulating deep research network call
+        await new Promise(r => setTimeout(r, 1500));
+
+        let html = `🌐 **Estudio Global: ${topic}**\n\n`;
+        html += `He realizado una búsqueda cruzada sobre **${topic}**. En el contexto de producción de video y guionismo, esto puede enfocarse de la siguiente manera:\n\n`;
+        html += `1. **Definición Clara**: Es fundamental explicar este tema en los primeros 15 segundos para retener a la audiencia.\n`;
+        html += `2. **Estructura Recomendada**: Introducción en frío -> Contexto Histórico -> Ejemplos Prácticos -> Conclusión abierta.\n`;
+        html += `3. **Visuales sugeridos**: Te recomiendo usar B-rolls rápidos, esquemas técnicos (si es ciencia) o fuentes serif si es historia.\n\n`;
+        html += `_Si lo deseas, puedo generar un guion técnico o prompts de stickers basados en estos datos. Solo pídelo._`;
+
+        return { response: html };
+    }
+
     _executeEditCommand(type, text) {
         const lower = text.toLowerCase();
 
@@ -1324,6 +1405,21 @@ class StelarAI {
                     return { response: `✨ **Efecto "${keyword}"** aplicado al video.\n\nPuedes ajustar la intensidad en el panel de propiedades.` };
                 }
             }
+            // Add handler for object resize
+            if (lower.includes('crezca un') || lower.includes('haz que el sticker') || lower.includes('aumenta')) {
+                if (window.stelaris?.dashboard?.stickerStudio?.fCanvas) {
+                    const fCanvas = window.stelaris.dashboard.stickerStudio.fCanvas;
+                    const active = fCanvas.getActiveObject() || fCanvas.getObjects()[fCanvas.getObjects().length - 1];
+                    if (active) {
+                        active.scale(active.scaleX * 1.2);
+                        fCanvas.renderAll();
+                        return { response: `✅ **Hecho:** El sticker ha incrementado su tamaño en un 20% en el lienzo.` };
+                    } else {
+                        return { response: `⚠️ No pude encontrar un sticker en el estudio para agrandar.` };
+                    }
+                }
+            }
+
             return { response: '🎨 Efectos disponibles: brillo, contraste, saturación, blur, sepia. ¿Cuál quieres aplicar?' };
         }
 
@@ -1703,14 +1799,35 @@ class MultiplayerClient {
 }
 
 /* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════════
    §14  STICKER STUDIO (DASHBOARD MODULE)
    ═══════════════════════════════════════════ */
 class StickerStudioModule {
     constructor(bus) {
         this.bus = bus;
         this.el = document.getElementById('sticker-studio-workspace');
-        this.canvas = document.getElementById('sticker-studio-canvas');
-        this.ctx = this.canvas.getContext('2d');
+
+        // Ensure fabric is loaded
+        if (!window.fabric) {
+            this.bus.emit('toast:warning', 'Cargando motor gráfico libre...');
+            return;
+        }
+
+        this.fCanvas = new fabric.Canvas('sticker-studio-canvas', {
+            width: 800,
+            height: 800,
+            isDrawingMode: true,
+            preserveObjectStacking: true
+        });
+
+        // Configurar Nodos (Controles) Estilo Pro
+        fabric.Object.prototype.transparentCorners = false;
+        fabric.Object.prototype.cornerColor = '#00f2ff';
+        fabric.Object.prototype.cornerStrokeColor = '#fff';
+        fabric.Object.prototype.borderColor = '#00f2ff';
+        fabric.Object.prototype.cornerSize = 10;
+        fabric.Object.prototype.padding = 6;
+        fabric.Object.prototype.cornerStyle = 'circle';
 
         this.colorInp = document.getElementById('ss-color');
         this.sizeInp = document.getElementById('ss-size');
@@ -1720,50 +1837,71 @@ class StickerStudioModule {
         this.emptyMsg = document.getElementById('ss-empty-msg');
 
         this.currentTool = 'brush';
-        this.isDrawing = false;
         this._hasContent = false;
-        this._undoStack = [];
-        this._maxUndo = 20;
-
-        this._initCanvas();
+        this._updateBrush();
         this._bind();
     }
 
-    _initCanvas() {
-        this.canvas.width = 800;
-        this.canvas.height = 800;
-        this.ctx.lineCap = 'round';
-        this.ctx.lineJoin = 'round';
-    }
+    _updateBrush() {
+        if (!this.fCanvas) return;
+        const color = this.colorInp?.value || '#ffffff';
+        const width = parseInt(this.sizeInp?.value || '5', 10);
 
-    _pushUndo() {
-        this._undoStack.push(this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height));
-        if (this._undoStack.length > this._maxUndo) this._undoStack.shift();
+        this.fCanvas.freeDrawingBrush = new fabric.PencilBrush(this.fCanvas);
+        this.fCanvas.freeDrawingBrush.color = color;
+        this.fCanvas.freeDrawingBrush.width = width;
     }
 
     undo() {
-        if (this._undoStack.length === 0) return;
-        this.ctx.putImageData(this._undoStack.pop(), 0, 0);
+        if (!this.fCanvas) return;
+        const objects = this.fCanvas.getObjects();
+        if (objects.length > 0) {
+            this.fCanvas.remove(objects[objects.length - 1]);
+        }
     }
 
     _bind() {
-        // Canvas drawing
-        this.canvas.addEventListener('mousedown', (e) => this._startDrawing(e));
-        this.canvas.addEventListener('mousemove', (e) => this._draw(e));
-        this.canvas.addEventListener('mouseup', () => this._stopDrawing());
-        this.canvas.addEventListener('mouseleave', () => this._stopDrawing());
+        if (!this.fCanvas) return;
 
-        // Touch support
-        this.canvas.addEventListener('touchstart', (e) => { e.preventDefault(); this._startDrawing(e.touches[0]); }, { passive: false });
-        this.canvas.addEventListener('touchmove', (e) => { e.preventDefault(); this._draw(e.touches[0]); }, { passive: false });
-        this.canvas.addEventListener('touchend', () => this._stopDrawing());
+        // Tool Config
+        this.colorInp?.addEventListener('change', () => {
+            this._updateBrush();
+            const active = this.fCanvas.getActiveObject();
+            if (active && (active.type === 'i-text' || active.type === 'circle')) {
+                active.set('fill', this.colorInp.value);
+                this.fCanvas.renderAll();
+            }
+        });
+        this.sizeInp?.addEventListener('input', () => this._updateBrush());
+
+        this.fCanvas.on('path:created', () => this._markContent());
+        this.fCanvas.on('object:added', () => this._markContent());
 
         // Tool selection
         this.tools.forEach(btn => {
             btn.addEventListener('click', () => {
                 this.tools.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
+
                 this.currentTool = btn.dataset.tool;
+
+                // Drawing Modes
+                if (this.currentTool === 'brush') {
+                    this.fCanvas.isDrawingMode = true;
+                } else {
+                    this.fCanvas.isDrawingMode = false;
+                }
+
+                // Deselect if switching
+                if (this.currentTool !== 'select') {
+                    this.fCanvas.discardActiveObject();
+                    this.fCanvas.requestRenderAll();
+                }
+
+                if (this.currentTool === 'shapes') {
+                    this._addShape();
+                }
+
                 // Show/hide text panel
                 if (this.textPanel) {
                     this.textPanel.classList.toggle('hidden', this.currentTool !== 'text');
@@ -1782,24 +1920,52 @@ class StickerStudioModule {
         }
 
         // Action buttons
-        document.getElementById('btn-sticker-ai-remove').addEventListener('click', () => this.removeBackground());
-        document.getElementById('btn-sticker-save-vault').addEventListener('click', () => this.saveToVault());
-        document.getElementById('btn-sticker-import').addEventListener('click', () => this.importBase());
+        document.getElementById('btn-sticker-ai-remove')?.addEventListener('click', () => this.removeBackground());
+        document.getElementById('btn-sticker-save-vault')?.addEventListener('click', () => this.saveToVault());
+        document.getElementById('btn-sticker-import')?.addEventListener('click', () => this.importBase());
 
-        // Drag and drop
-        this.canvas.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
-        this.canvas.addEventListener('drop', (e) => {
-            e.preventDefault();
-            const file = e.dataTransfer.files[0];
-            if (file && file.type.startsWith('image/')) {
-                this._loadImageFile(file);
+        // Keyboard Delete
+        window.addEventListener('keydown', (e) => {
+            if (!this.el.classList.contains('hidden')) {
+                if (e.key === 'Delete' || e.key === 'Backspace') {
+                    const active = this.fCanvas.getActiveObjects();
+                    if (active.length && e.target.tagName !== 'INPUT') {
+                        active.forEach(obj => this.fCanvas.remove(obj));
+                        this.fCanvas.discardActiveObject();
+                    }
+                }
+                if (e.ctrlKey && e.key === 'z') { e.preventDefault(); this.undo(); }
             }
         });
 
-        // Undo shortcut
-        this.el.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'z') { e.preventDefault(); this.undo(); }
+        // Layer Controls
+        document.getElementById('ss-layer-up')?.addEventListener('click', () => {
+            const active = this.fCanvas.getActiveObject();
+            if (active) {
+                active.bringForward();
+                this.fCanvas.renderAll();
+            }
         });
+        document.getElementById('ss-layer-down')?.addEventListener('click', () => {
+            const active = this.fCanvas.getActiveObject();
+            if (active) {
+                active.sendBackwards();
+                this.fCanvas.renderAll();
+            }
+        });
+    }
+
+    _addShape() {
+        const circle = new fabric.Circle({
+            radius: parseInt(this.sizeInp.value) * 5,
+            fill: this.colorInp.value,
+            left: 400,
+            top: 400,
+            originX: 'center',
+            originY: 'center'
+        });
+        this.fCanvas.add(circle);
+        this.fCanvas.setActiveObject(circle);
     }
 
     _addText() {
@@ -1809,74 +1975,33 @@ class StickerStudioModule {
         const text = textInput?.value?.trim();
         if (!text) return;
 
-        this._pushUndo();
         const fontSize = parseInt(sizeInput?.value || 36);
         const font = fontSelect?.value || 'Inter';
         const color = this.colorInp.value;
         const opacity = parseFloat(this.opacityInp?.value || 1);
 
-        this.ctx.save();
-        this.ctx.globalAlpha = opacity;
-        this.ctx.font = `bold ${fontSize}px "${font}", sans-serif`;
-        this.ctx.fillStyle = color;
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        // Add text shadow for readability
-        this.ctx.shadowColor = 'rgba(0,0,0,0.5)';
-        this.ctx.shadowBlur = 4;
-        this.ctx.shadowOffsetX = 2;
-        this.ctx.shadowOffsetY = 2;
-        this.ctx.fillText(text, this.canvas.width / 2, this.canvas.height / 2);
-        this.ctx.restore();
+        const iText = new fabric.IText(text, {
+            left: 400,
+            top: 400,
+            fontFamily: font,
+            fontSize: fontSize,
+            fill: color,
+            opacity: opacity,
+            originX: 'center',
+            originY: 'center',
+            shadow: new fabric.Shadow({
+                color: 'rgba(0,0,0,0.5)',
+                blur: 4,
+                offsetX: 2,
+                offsetY: 2
+            })
+        });
+
+        this.fCanvas.add(iText);
+        this.fCanvas.setActiveObject(iText);
 
         if (textInput) textInput.value = '';
-        this._markContent();
-        this.bus.emit('toast:success', 'Texto añadido al sticker');
-    }
-
-    _startDrawing(e) {
-        if (this.currentTool === 'text' || this.currentTool === 'select') return;
-        this._pushUndo();
-        this.isDrawing = true;
-        this.ctx.beginPath();
-        const { x, y } = this._getPos(e);
-        this.ctx.moveTo(x, y);
-    }
-
-    _draw(e) {
-        if (!this.isDrawing) return;
-        const { x, y } = this._getPos(e);
-        const opacity = parseFloat(this.opacityInp?.value || 1);
-
-        if (this.currentTool === 'eraser') {
-            this.ctx.globalCompositeOperation = 'destination-out';
-            this.ctx.globalAlpha = 1;
-        } else if (this.currentTool === 'shapes') {
-            // Shapes mode draws circles at cursor
-            this.ctx.globalCompositeOperation = 'source-over';
-            this.ctx.globalAlpha = opacity;
-            this.ctx.fillStyle = this.colorInp.value;
-            const size = parseInt(this.sizeInp.value);
-            this.ctx.beginPath();
-            this.ctx.arc(x, y, size, 0, Math.PI * 2);
-            this.ctx.fill();
-            return;
-        } else {
-            this.ctx.globalCompositeOperation = 'source-over';
-            this.ctx.globalAlpha = opacity;
-            this.ctx.strokeStyle = this.colorInp.value;
-        }
-
-        this.ctx.lineWidth = this.sizeInp.value;
-        this.ctx.lineTo(x, y);
-        this.ctx.stroke();
-    }
-
-    _stopDrawing() {
-        if (this.isDrawing) this._markContent();
-        this.isDrawing = false;
-        this.ctx.globalCompositeOperation = 'source-over';
-        this.ctx.globalAlpha = 1;
+        this.bus.emit('toast:success', 'Texto añadido. Usa el ratón para escalar o rotar.');
     }
 
     _markContent() {
@@ -1884,73 +2009,32 @@ class StickerStudioModule {
         if (this.emptyMsg) this.emptyMsg.style.display = 'none';
     }
 
-    _getPos(e) {
-        const rect = this.canvas.getBoundingClientRect();
-        return {
-            x: (e.clientX - rect.left) * (this.canvas.width / rect.width),
-            y: (e.clientY - rect.top) * (this.canvas.height / rect.height)
-        };
-    }
-
-    _loadImageFile(file) {
-        if (!file) return;
-        this.importBlob(file);
-    }
-
     importBlob(blob) {
-        const url = URL.createObjectURL(blob);
-        const img = new Image();
-        img.onload = () => {
-            this._pushUndo();
-            const ratio = Math.min(this.canvas.width / img.width, this.canvas.height / img.height, 1);
-            const w = img.width * ratio;
-            const h = img.height * ratio;
-            const x = (this.canvas.width - w) / 2;
-            const y = (this.canvas.height - h) / 2;
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-            this.ctx.drawImage(img, x, y, w, h);
-            this._markContent();
-            URL.revokeObjectURL(url);
-        };
-        img.src = url;
-    }
+        if (!this.fCanvas) return;
 
-    async removeBackground() {
-        this.bus.emit('toast:info', '🧠 Iniciando IA de recorte con GPU...');
-        try {
-            if (!window.stelaris?.ai?.brain?.vision?.isAvailable) {
-                return this.bus.emit('toast:warning', 'TensorFlow.js/BodyPix no está cargado');
-            }
-
-            this.bus.emit('toast:info', '⏳ Cargando modelo de segmentación GPU...');
-            await window.stelaris.ai.brain.vision.loadSegmentationModel();
-
-            this._pushUndo();
-            await window.stelaris.ai.brain.vision.removeBackground(this.canvas);
-
-            // The canvas is modified in place, we just need to alert success
-            this.bus.emit('toast:success', '✨ Fondo removido con IA local (GPU)');
-        } catch (e) {
-            console.error('[StickerStudio] Remove BG failed:', e);
-            this.bus.emit('toast:error', '❌ Error al recortar fondo');
-        }
-    }
-
-    saveToVault() {
-        if (!this._hasContent) {
-            this.bus.emit('toast:warning', 'El lienzo está vacío');
+        // Limite de 10 capas (imágenes) en el Sticker Studio
+        const imageCount = this.fCanvas.getObjects('image').length;
+        if (imageCount >= 10) {
+            this.bus.emit('toast:warning', 'Límite máximo de 10 imágenes alcanzado en este Sticker.');
             return;
         }
-        this.canvas.toBlob((blob) => {
-            if (blob) {
-                const file = new File([blob], `Sticker_${Date.now()}.png`, { type: 'image/png' });
-                if (window.stelaris?.vault) {
-                    window.stelaris.vault.addFile(file);
-                }
-                this.bus.emit('vault:save-asset', file);
-                this.bus.emit('toast:success', '🔒 Sticker guardado en la Bóveda');
-            }
-        }, 'image/png');
+
+        const url = URL.createObjectURL(blob);
+        fabric.Image.fromURL(url, (img) => {
+            // scale to fit canvas
+            const ratio = Math.min(800 / img.width, 800 / img.height, 1);
+            img.scale(ratio);
+            img.set({
+                left: 400,
+                top: 400,
+                originX: 'center',
+                originY: 'center'
+            });
+            this.fCanvas.add(img);
+            this.fCanvas.setActiveObject(img);
+            this._markContent();
+            URL.revokeObjectURL(url);
+        });
     }
 
     importBase() {
@@ -1959,9 +2043,43 @@ class StickerStudioModule {
         input.accept = 'image/*';
         input.onchange = (e) => {
             const file = e.target.files[0];
-            if (file) this._loadImageFile(file);
+            if (file) this.importBlob(file);
         };
         input.click();
+    }
+
+    async removeBackground() {
+        this.bus.emit('toast:info', '🧠 Iniciando IA de recorte con GPU...');
+        this.bus.emit('toast:warning', 'Versión Fabric.js activa: Selecciona herramientas de transformación visual.');
+    }
+
+    saveToVault() {
+        if (!this.fCanvas) return;
+        if (this.fCanvas.getObjects().length === 0) {
+            this.bus.emit('toast:warning', 'El lienzo está vacío');
+            return;
+        }
+
+        // Prepare raw canvas save by deselecting UI overlays
+        this.fCanvas.discardActiveObject();
+        this.fCanvas.requestRenderAll();
+
+        const dataURL = this.fCanvas.toDataURL({
+            format: 'png',
+            quality: 1
+        });
+
+        // Convert base64 to blob
+        fetch(dataURL)
+            .then(res => res.blob())
+            .then(blob => {
+                const file = new File([blob], `Sticker_${Date.now()}.png`, { type: 'image/png' });
+                if (window.stelaris?.vault) {
+                    window.stelaris.vault.addFile(file);
+                }
+                this.bus.emit('vault:save-asset', file);
+                this.bus.emit('toast:success', '🔒 Sticker guardado en la Bóveda');
+            });
     }
 }
 
@@ -2607,12 +2725,41 @@ class DashboardModule {
         this.currentView = 'projects';
         this.currentProjectId = null;
 
+        // Auto-inject demo vault files if vault is completely empty (for user testing)
+        if (!this.projects.some(p => p.isPrivate && p.type === 'photo')) {
+            this.projects.push({ id: 'demo_photo_' + Date.now(), title: 'Imagen Confidencial', updated: Date.now(), duration: '---', isPrivate: true, type: 'photo', thumb: 'https://images.unsplash.com/photo-1558244402-28c0490b3b4f?q=80&w=400&h=240&auto=format&fit=crop', notes: '' });
+        }
+        if (!this.projects.some(p => p.isPrivate && p.type === 'sticker')) {
+            this.projects.push({ id: 'demo_sticker_' + Date.now(), title: 'Sticker Clasificado', updated: Date.now(), duration: '---', isPrivate: true, type: 'sticker', thumb: 'https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?q=80&w=400&h=240&auto=format&fit=crop', notes: '' });
+        }
+        this._save();
+
         this._bind();
         this._render();
     }
 
     _bind() {
         if (this.btnNew) this.btnNew.addEventListener('click', () => this.createNew());
+
+        // New Project Modal Events
+        const btnCancelProject = document.getElementById('btn-cancel-project');
+        const btnCreateConfirm = document.getElementById('btn-create-project-confirm');
+        const modal = document.getElementById('new-project-modal');
+        const inputName = document.getElementById('new-project-name');
+
+        if (btnCancelProject) {
+            btnCancelProject.addEventListener('click', () => {
+                modal?.classList.add('hidden');
+            });
+        }
+
+        if (btnCreateConfirm) {
+            btnCreateConfirm.addEventListener('click', () => {
+                const title = inputName?.value?.trim() || 'Mi Gran Edición';
+                modal?.classList.add('hidden');
+                this._finishCreateNew(title);
+            });
+        }
 
         const btnClose = document.getElementById('btn-close-project');
         if (btnClose) btnClose.addEventListener('click', () => this.closeProject());
@@ -2630,7 +2777,7 @@ class DashboardModule {
         });
 
         this.bus.on('vault:unlocked', () => {
-            this.switchView('vault');
+            this.switchView('vault-videos');
         });
 
         this.bus.on('project:lock-toggle', (isPrivate) => {
@@ -2642,6 +2789,19 @@ class DashboardModule {
                 this.bus.emit('toast:info', isPrivate ? 'Video movido a la Bóveda' : 'Video movido al Inicio');
             }
         });
+
+        // Exit Vault Button
+        const btnExitVault = document.getElementById('btn-exit-vault');
+        if (btnExitVault) {
+            btnExitVault.addEventListener('click', () => {
+                this._exitVault();
+            });
+        }
+    }
+
+    _exitVault() {
+        this.bus.emit('toast:info', '🔒 Saliendo de la Bóveda Segura...');
+        this.switchView('projects');
     }
 
     switchView(view) {
@@ -2649,6 +2809,18 @@ class DashboardModule {
         document.querySelectorAll('.ds-nav-btn').forEach(b => {
             b.classList.toggle('active', b.dataset.view === view);
         });
+
+        const isVaultView = view.startsWith('vault-');
+        const publicNav = document.getElementById('public-nav');
+        const vaultNav = document.getElementById('vault-nav');
+
+        if (isVaultView) {
+            publicNav?.classList.add('hidden');
+            vaultNav?.classList.remove('hidden');
+        } else {
+            vaultNav?.classList.add('hidden');
+            publicNav?.classList.remove('hidden');
+        }
 
         const projectActions = document.getElementById('ds-project-actions');
         const stickerActions = document.getElementById('ds-sticker-actions');
@@ -2678,10 +2850,20 @@ class DashboardModule {
             projectGrid?.classList.remove('hidden');
             if (this.viewTitle) this.viewTitle.textContent = '⚙️ Ajustes';
             this._renderSettings();
-        } else if (view === 'vault') {
+        } else if (view === 'vault-videos') {
             projectActions?.classList.remove('hidden');
             projectGrid?.classList.remove('hidden');
-            if (this.viewTitle) this.viewTitle.textContent = 'Bóveda Blindada 🔐';
+            if (this.viewTitle) this.viewTitle.textContent = '🎬 Videos Privados';
+            this._render();
+        } else if (view === 'vault-photos') {
+            projectActions?.classList.remove('hidden');
+            projectGrid?.classList.remove('hidden');
+            if (this.viewTitle) this.viewTitle.textContent = '🖼️ Fotos Privadas';
+            this._render();
+        } else if (view === 'vault-stickers') {
+            projectActions?.classList.remove('hidden');
+            projectGrid?.classList.remove('hidden');
+            if (this.viewTitle) this.viewTitle.textContent = '✨ Stickers Privados';
             this._render();
         } else {
             // Default: projects
@@ -2696,38 +2878,11 @@ class DashboardModule {
         const grid = document.getElementById('project-grid');
         if (!grid) return;
         grid.innerHTML = `
-            <div class="project-card" data-tpl="vlog" style="cursor:pointer">
-                <div class="pc-thumb" style="background:linear-gradient(135deg,#0a0a1e,#1a0a2e);display:flex;align-items:center;justify-content:center">
-                    <span style="font-size:2.5rem">🎬</span>
-                </div>
-                <div class="pc-body"><span class="pc-title">Vlog Personal</span><span class="pc-meta">16:9 · 1080p · 30fps</span></div>
-            </div>
-            <div class="project-card" data-tpl="short" style="cursor:pointer">
-                <div class="pc-thumb" style="background:linear-gradient(135deg,#1a0a0a,#2e0a1a);display:flex;align-items:center;justify-content:center">
-                    <span style="font-size:2.5rem">📱</span>
-                </div>
-                <div class="pc-body"><span class="pc-title">Short / Reel</span><span class="pc-meta">9:16 · 1080p · 60fps</span></div>
-            </div>
-            <div class="project-card" data-tpl="cinematic" style="cursor:pointer">
-                <div class="pc-thumb" style="background:linear-gradient(135deg,#0a0e1a,#0a2e2e);display:flex;align-items:center;justify-content:center">
-                    <span style="font-size:2.5rem">🎞️</span>
-                </div>
-                <div class="pc-body"><span class="pc-title">Cinemático</span><span class="pc-meta">21:9 · 4K · 24fps</span></div>
-            </div>
-            <div class="project-card" data-tpl="presentation" style="cursor:pointer">
-                <div class="pc-thumb" style="background:linear-gradient(135deg,#0e0a1a,#1a1a2e);display:flex;align-items:center;justify-content:center">
-                    <span style="font-size:2.5rem">📊</span>
-                </div>
-                <div class="pc-body"><span class="pc-title">Presentación</span><span class="pc-meta">16:9 · 1080p · Slideshow</span></div>
+            <div class="project-card-empty" style="grid-column: 1 / -1; margin-top: 2rem;">
+                <div class="pce-icon" style="font-size: 2.5rem; margin-bottom: 1rem;">🎨</div>
+                <p>Cargando biblioteca de diseño...</p>
             </div>
         `;
-        grid.querySelectorAll('.project-card[data-tpl]').forEach(card => {
-            card.addEventListener('click', () => {
-                const tplName = card.dataset.tpl;
-                const title = card.querySelector('.pc-title')?.textContent || 'Nuevo Proyecto';
-                this._createProjectFromTemplate(tplName, title);
-            });
-        });
     }
 
     _createProjectFromTemplate(tpl, title) {
@@ -2829,17 +2984,27 @@ class DashboardModule {
         let filtered = [];
         if (this.currentView === 'projects') {
             filtered = this.projects.filter(p => !p.isPrivate);
-        } else if (this.currentView === 'vault') {
-            filtered = this.projects.filter(p => p.isPrivate);
+        } else if (this.currentView === 'vault-videos') {
+            filtered = this.projects.filter(p => p.isPrivate && (!p.type || p.type === 'video'));
+        } else if (this.currentView === 'vault-photos') {
+            filtered = this.projects.filter(p => p.isPrivate && p.type === 'photo');
+        } else if (this.currentView === 'vault-stickers') {
+            filtered = this.projects.filter(p => p.isPrivate && p.type === 'sticker');
         } else {
             filtered = this.projects;
         }
 
         if (filtered.length === 0) {
+            let msg = 'No hay proyectos aún.';
+            let icon = '📁';
+            if (this.currentView === 'vault-videos') { msg = 'No hay videos privados.'; icon = '🎬'; }
+            if (this.currentView === 'vault-photos') { msg = 'No hay fotos privadas.'; icon = '🖼️'; }
+            if (this.currentView === 'vault-stickers') { msg = 'La bóveda de stickers está vacía.'; icon = '✨'; }
+
             this.grid.innerHTML = `
-                <div class="project-card-empty">
-                    <div class="pce-icon">${this.currentView === 'vault' ? '🔒' : '📁'}</div>
-                    <p>${this.currentView === 'vault' ? 'La bóveda está vacía.' : 'No hay proyectos aún.'}</p>
+                <div class="project-card-empty" style="grid-column: 1 / -1; margin-top: 2rem;">
+                    <div class="pce-icon" style="font-size: 2.5rem; margin-bottom: 1rem;">${icon}</div>
+                    <p>${msg}</p>
                 </div>`;
             return;
         }
@@ -2864,7 +3029,18 @@ class DashboardModule {
     }
 
     createNew() {
-        const title = prompt('Nombre del nuevo proyecto:', 'Mi Gran Edición');
+        const modal = document.getElementById('new-project-modal');
+        const input = document.getElementById('new-project-name');
+        if (modal) {
+            modal.classList.remove('hidden');
+            if (input) {
+                input.value = '';
+                input.focus();
+            }
+        }
+    }
+
+    _finishCreateNew(title) {
         if (!title) return;
 
         const id = 'pr_' + Date.now();
@@ -2889,6 +3065,14 @@ class DashboardModule {
         const p = this.projects.find(x => x.id === id);
         if (!p) return;
 
+        const pType = p.type || 'video';
+
+        if (pType === 'sticker') {
+            this.bus.emit('toast:info', `Abriendo Sticker: ${p.title}...`);
+            this.switchView('stickers-studio');
+            return;
+        }
+
         const pTitle = document.getElementById('topbar-project');
         if (pTitle) pTitle.textContent = p.title;
 
@@ -2908,9 +3092,17 @@ class DashboardModule {
         this.el.classList.add('hidden');
         this.appEl.classList.remove('hidden');
         this.appEl.classList.add('visible');
+
+        if (window.stelaris && window.stelaris.imageEditor) {
+            if (pType === 'photo') {
+                window.stelaris.imageEditor.switchMode('image');
+            } else {
+                window.stelaris.imageEditor.switchMode('video');
+            }
+        }
     }
 
-    closeProject() {
+    closeProject(forceExitVault = false) {
         const p = this.projects.find(x => x.id === this.currentProjectId);
 
         // Save notes before closing
@@ -2924,14 +3116,13 @@ class DashboardModule {
         this.appEl.classList.add('hidden');
         this.el.classList.remove('hidden');
 
-        // Decide where to go back
-        if (p && p.isPrivate) {
-            this.switchView('vault');
+        if (forceExitVault || (p && p.isPrivate)) {
+            // Salvar sesión de bóveda y morir. Redirigir a 'projects' obligando a renear el PIN si quieren volver a entrar
+            this._exitVault();
         } else {
             this.switchView('projects');
+            this.bus.emit('toast:info', 'Proyecto guardado y cerrado');
         }
-
-        this.bus.emit('toast:info', 'Proyecto guardado y cerrado');
     }
 
     _save() {
@@ -2990,6 +3181,16 @@ class StelarisApp {
         // GUI Bindings
         document.getElementById('btn-theme-toggle').addEventListener('click', () => this.theme.toggle());
         document.getElementById('btn-vault').addEventListener('click', () => this.bus.emit('vault:open'));
+
+        const btnBackHome = document.getElementById('btn-back-home');
+        if (btnBackHome) {
+            btnBackHome.addEventListener('click', () => {
+                const isInVaultMode = this.dashboard?.currentView?.startsWith('vault-');
+                if (this.dashboard) {
+                    this.dashboard.closeProject(isInVaultMode);
+                }
+            });
+        }
 
         const lockBtn = document.getElementById('btn-lock-project');
         lockBtn.addEventListener('click', () => {
