@@ -890,7 +890,25 @@ class VaultModule {
     _showError() {
         this.inputPin.classList.add('shake');
         this.inputPin.style.borderColor = 'var(--color-error)';
-        this.bus.emit('toast:error', `PIN incorrecto. Intentos: ${this._attempts}`);
+
+        const attemptsLeft = 5 - this._attempts;
+
+        if (this._attempts >= 5) {
+            // Protocolo Fantasma: Nuclear Option
+            this.bus.emit('toast:error', '⛔ Acceso denegado: Opción Nuclear activada. Borrando datos...');
+            localStorage.removeItem('stelaris_projects');
+            localStorage.removeItem('stelaris_vault_assets');
+            localStorage.removeItem(this.cfg.pinHashKey);
+            window.stelaris.dashboard.projects = [];
+            window.stelaris.dashboard._save();
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+            return;
+        } else {
+            this.bus.emit('toast:error', `PIN incorrecto. Intentos restantes: ${attemptsLeft}`);
+        }
+
         setTimeout(() => {
             this.inputPin.classList.remove('shake');
             this.inputPin.style.borderColor = '';
@@ -2923,11 +2941,17 @@ class DashboardModule {
                 </div>
 
                 <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:14px;padding:1.5rem;margin-bottom:1.5rem">
-                    <h3 style="font-size:1rem;margin-bottom:1rem">💾 Datos</h3>
+                    <h3 style="font-size:1rem;margin-bottom:1rem">💾 Datos & Seguridad</h3>
                     <p style="color:#ccc;font-size:0.85rem;margin-bottom:1rem">Proyectos guardados: <strong style="color:var(--color-text)">${this.projects.length}</strong></p>
-                    <div style="display:flex;gap:1rem">
-                        <button class="btn btn-ghost" id="settings-export-btn" style="flex:1">📦 Exportar datos</button>
-                        <button class="btn btn-ghost" id="settings-clear-btn" style="flex:1;color:var(--color-error)">🗑 Limpiar todo</button>
+                    <div style="display:flex;flex-direction:column;gap:1.5rem">
+                        <div>
+                            <button class="btn btn-ghost" id="settings-export-btn" style="width:100%;text-align:left">📦 Exportar Datos</button>
+                            <p style="color:var(--color-text-muted);font-size:0.75rem;margin-top:0.4rem;padding-left:0.5rem">Crea un respaldo de tu trabajo. Descarga un archivo JSON con la información de tus proyectos y configuración para importarlos luego.</p>
+                        </div>
+                        <div>
+                            <button class="btn btn-ghost" id="settings-clear-btn" style="width:100%;text-align:left;color:var(--color-error)">🗑 Limpiar Todo (Nuclear)</button>
+                            <p style="color:var(--color-text-muted);font-size:0.75rem;margin-top:0.4rem;padding-left:0.5rem">Borra permanentemente la base de datos local de tu navegador y la Bóveda Segura. Esta acción no se puede deshacer.</p>
+                        </div>
                     </div>
                 </div>
 
